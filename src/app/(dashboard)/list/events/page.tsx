@@ -1,9 +1,23 @@
+"use client";
 import { useState } from "react";
 import { eventsData, role } from "@/lib/data";
 import { Filter, SortAsc, Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import TableSearch from "@/components/TableSearch";
 import Pagination from "@/components/Pagination";
 
@@ -21,8 +35,16 @@ const columns = [
   { header: "Title", accessor: "title" },
   { header: "Class", accessor: "class" },
   { header: "Date", accessor: "date", className: "hidden md:table-cell" },
-  { header: "Start Time", accessor: "startTime", className: "hidden md:table-cell" },
-  { header: "End Time", accessor: "endTime", className: "hidden md:table-cell" },
+  {
+    header: "Start Time",
+    accessor: "startTime",
+    className: "hidden md:table-cell",
+  },
+  {
+    header: "End Time",
+    accessor: "endTime",
+    className: "hidden md:table-cell",
+  },
   { header: "Actions", accessor: "action" },
 ];
 
@@ -48,7 +70,10 @@ const EventListPage = () => {
   );
 
   const renderRow = (item: Event) => (
-    <TableRow key={item.id} className="even:bg-slate-50 hover:bg-sasLightBlue text-sm">
+    <TableRow
+      key={item.id}
+      className="even:bg-slate-50 hover:bg-sasLightBlue text-sm"
+    >
       <TableCell className="flex items-center gap-4">{item.title}</TableCell>
       <TableCell>{item.class}</TableCell>
       <TableCell className="hidden md:table-cell">{item.date}</TableCell>
@@ -116,9 +141,14 @@ const EventListPage = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedData.length > 0 ? paginatedData.map(renderRow) : (
+            {paginatedData.length > 0 ? (
+              paginatedData.map(renderRow)
+            ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center py-8 text-muted-foreground">
+                <TableCell
+                  colSpan={columns.length}
+                  className="text-center py-8 text-muted-foreground"
+                >
                   No events found.
                 </TableCell>
               </TableRow>
@@ -142,7 +172,12 @@ const EventListPage = () => {
           </DialogHeader>
           {/* Add filter fields here */}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFilterDialogOpen(false)}>Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => setFilterDialogOpen(false)}
+            >
+              Cancel
+            </Button>
             <Button>Apply Filters</Button>
           </DialogFooter>
         </DialogContent>
@@ -155,7 +190,9 @@ const EventListPage = () => {
           </DialogHeader>
           {/* Add sort options here */}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSortDialogOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setSortDialogOpen(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
