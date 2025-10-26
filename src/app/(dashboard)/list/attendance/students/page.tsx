@@ -356,11 +356,30 @@ export default function StudentAttendancePage() {
       setHasFetchedOnce(true);
       console.log('🏁 Fetch completed, loading set to false');
     }
-  }, [debouncedSearch, analyticsFilters, page, pageSize]);
+  }, [debouncedSearch, page, pageSize]);
 
   // Fetch data on component mount and when search changes
   useEffect(() => {
     console.log('useEffect triggered - fetching data');
+    fetchStudentAttendance();
+    fetchSubjects();
+  }, [fetchStudentAttendance, fetchSubjects]);
+
+  // Handle analytics filter changes - auto-apply filters to table
+  const handleAnalyticsFiltersChange = useCallback((filters: any) => {
+    console.log('🔄 Analytics filters changed:', filters);
+    setAnalyticsFilters(filters);
+    // Auto-apply filters to table immediately
+    setTimeout(() => {
+      console.log('🚀 Auto-applying analytics filters to table...');
+      fetchStudentAttendance();
+      fetchSubjects();
+    }, 100); // Small delay to ensure state is updated
+  }, [fetchStudentAttendance, fetchSubjects]);
+
+  // Function to apply analytics filters and fetch data
+  const applyAnalyticsFilters = useCallback(() => {
+    console.log('Applying analytics filters and fetching data');
     fetchStudentAttendance();
     fetchSubjects();
   }, [fetchStudentAttendance, fetchSubjects]);
@@ -1621,7 +1640,9 @@ export default function StudentAttendancePage() {
   // Build a unified snapshot of current filters + time range
   const buildAnalyticsSnapshot = () => {
     return {
-      timeRange: { preset: 'year' as const },
+      timeRange: { 
+        preset: 'year' as const
+      },
       // Table filters (department is a human-readable string here)
       tableFilters: { ...filters },
     };
@@ -1983,7 +2004,7 @@ export default function StudentAttendancePage() {
           {/* Analytics Dashboard */}
           <Card className="border border-blue-200 shadow-lg rounded-xl overflow-hidden p-0 w-full">
               <AttendanceAnalytics 
-                key={`analytics-${analyticsResetKey}-${JSON.stringify(analyticsFilters)}-${selectedSubject}`}
+                key={`analytics-${analyticsResetKey}`}
                 data={transformedStudentsData}
                 loading={analyticsLoading}
                 type="student"
@@ -1999,11 +2020,9 @@ export default function StudentAttendancePage() {
                 subjects={subjects.map(subject => {
                   return { id: subject.subjectId.toString(), name: subject.subjectCode };
                 })}
-                onFiltersChange={(snapshot) => {
-                  setAnalyticsFilters(snapshot);
-                  setPage(1); // reset to first page; effect will refetch
-                }}
+                onFiltersChange={handleAnalyticsFiltersChange}
                 onClearAnalytics={handleClearAnalyticsFilters}
+                onApplyFilters={applyAnalyticsFilters}
 
                 onDrillDown={(filter: { type: string; value: string }) => {
                   // Handle drill down logic

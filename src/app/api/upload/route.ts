@@ -3,6 +3,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { prisma } from '@/lib/prisma';
+import { getCloudStorageService } from '@/lib/services/cloud-storage.service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -55,11 +56,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = join(process.cwd(), 'public', 'uploads');
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true });
-    }
+    // Convert file to buffer
+    const bytes = await file.arrayBuffer();
+    const fileBuffer = new Uint8Array(bytes);
 
     // Generate unique, sanitized filename
     const timestamp = Date.now();
@@ -74,19 +73,51 @@ export async function POST(request: NextRequest) {
       }
     })();
     const fileName = `department-logo-${timestamp}.${inferredExt}`;
-    const filePath = join(uploadsDir, fileName);
 
-    // Convert file to buffer and save
-    const bytes = await file.arrayBuffer();
-    await writeFile(filePath, new Uint8Array(bytes));
+    // Check if cloud storage is configured
+    const useCloudStorage = process.env.CLOUD_STORAGE_PROVIDER && 
+                           process.env.CLOUD_STORAGE_PROVIDER !== 'local';
 
-    // Return the public URL
-    const publicUrl = `/uploads/${fileName}`;
+    let publicUrl: string;
+    let savedFileName: string;
+
+    if (useCloudStorage) {
+      // Upload to cloud storage
+      const cloudStorage = getCloudStorageService();
+      const cloudKey = `uploads/${fileName}`;
+      
+      const result = await cloudStorage.uploadFile(
+        fileBuffer,
+        cloudKey,
+        file.type,
+        {
+          uploadedBy: userId.toString(),
+          uploadedAt: new Date().toISOString(),
+          originalName: file.name
+        }
+      );
+
+      publicUrl = result.url;
+      savedFileName = fileName;
+    } else {
+      // Fallback to local storage
+      const uploadsDir = join(process.cwd(), 'public', 'uploads');
+      if (!existsSync(uploadsDir)) {
+        await mkdir(uploadsDir, { recursive: true });
+      }
+
+      const filePath = join(uploadsDir, fileName);
+      await writeFile(filePath, fileBuffer);
+
+      publicUrl = `/uploads/${fileName}`;
+      savedFileName = fileName;
+    }
 
     return NextResponse.json({
       success: true,
       url: publicUrl,
-      filename: fileName
+      filename: savedFileName,
+      storage: useCloudStorage ? 'cloud' : 'local'
     });
 
   } catch (error) {

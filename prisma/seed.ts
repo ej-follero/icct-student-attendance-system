@@ -377,32 +377,88 @@ function generateAttendanceStatus(studentId: number, date: Date, isRegularStuden
   const dayOfWeek = date.getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
   
+  // Add time-based patterns - attendance varies throughout the semester
+  const semesterProgress = (date.getTime() - new Date('2025-08-01').getTime()) / (new Date('2025-10-31').getTime() - new Date('2025-08-01').getTime());
+  
+  // Add student-specific patterns based on studentId for consistency
+  const studentSeed = studentId % 100;
+  const studentPattern = (studentSeed / 100) * 0.3; // 0-0.3 variation per student
+  
+  // Add department-specific patterns (some departments have better attendance)
+  const departmentPattern = (studentId % 9) * 0.05; // 0-0.4 variation by department
+  
+  // Add course-specific patterns (some courses have different attendance rates)
+  const coursePattern = (studentId % 5) * 0.03; // 0-0.12 variation by course
+  
+  // Add monthly patterns - attendance drops mid-semester, improves at end
+  let monthlyModifier = 1.0;
+  const month = date.getMonth();
+  if (month === 8) { // September - mid-semester slump
+    monthlyModifier = 0.85;
+  } else if (month === 9) { // October - recovery
+    monthlyModifier = 0.95;
+  }
+  
+  // Add weekly patterns - attendance varies by week
+  const weekOfSemester = Math.floor(semesterProgress * 13); // 13 weeks in semester (Aug-Oct)
+  let weeklyModifier = 1.0;
+  if (weekOfSemester >= 2 && weekOfSemester <= 4) { // Weeks 3-5: mid-semester slump
+    weeklyModifier = 0.85;
+  } else if (weekOfSemester >= 8 && weekOfSemester <= 11) { // Weeks 9-12: exam prep and finals
+    weeklyModifier = 0.9;
+  } else if (weekOfSemester >= 12) { // Final weeks: attendance drops
+    weeklyModifier = 0.8;
+  }
+  
+  // Add special event patterns
+  let eventModifier = 1.0;
+  const dayOfMonth = date.getDate();
+  
+  // Midterm exam period (around September 30)
+  if (month === 8 && dayOfMonth >= 28 && dayOfMonth <= 2) {
+    eventModifier = 1.1; // Better attendance during exams
+  }
+  
+  // Final exam period (around October 25)
+  if (month === 9 && dayOfMonth >= 23 && dayOfMonth <= 27) {
+    eventModifier = 1.15; // Even better attendance during finals
+  }
+  
+  // Holiday periods (lower attendance)
+  if ((month === 8 && dayOfMonth === 26) || // National Heroes Day
+      (month === 9 && dayOfMonth >= 15 && dayOfMonth <= 17)) { // Mid-semester break
+    eventModifier = 0.3; // Much lower attendance on holidays
+  }
+  
+  // Combine all modifiers
+  const finalRandom = random * monthlyModifier * weeklyModifier * eventModifier + studentPattern + departmentPattern + coursePattern;
+  
   // Regular students have better attendance, especially on weekdays
   if (isRegularStudent) {
     if (isWeekend) {
       // Weekend classes have slightly lower attendance
-      if (random < 0.80) return AttendanceStatus.PRESENT;
-      if (random < 0.88) return AttendanceStatus.LATE;
-      if (random < 0.92) return AttendanceStatus.EXCUSED;
+      if (finalRandom < 0.80) return AttendanceStatus.PRESENT;
+      if (finalRandom < 0.88) return AttendanceStatus.LATE;
+      if (finalRandom < 0.92) return AttendanceStatus.EXCUSED;
       return AttendanceStatus.ABSENT;
     } else {
       // Weekday classes have better attendance
-      if (random < 0.88) return AttendanceStatus.PRESENT;
-      if (random < 0.94) return AttendanceStatus.LATE;
-      if (random < 0.97) return AttendanceStatus.EXCUSED;
+      if (finalRandom < 0.88) return AttendanceStatus.PRESENT;
+      if (finalRandom < 0.94) return AttendanceStatus.LATE;
+      if (finalRandom < 0.97) return AttendanceStatus.EXCUSED;
       return AttendanceStatus.ABSENT;
     }
   } else {
     // Irregular students have more varied attendance
     if (isWeekend) {
-      if (random < 0.65) return AttendanceStatus.PRESENT;
-      if (random < 0.75) return AttendanceStatus.LATE;
-      if (random < 0.80) return AttendanceStatus.EXCUSED;
+      if (finalRandom < 0.65) return AttendanceStatus.PRESENT;
+      if (finalRandom < 0.75) return AttendanceStatus.LATE;
+      if (finalRandom < 0.80) return AttendanceStatus.EXCUSED;
       return AttendanceStatus.ABSENT;
     } else {
-      if (random < 0.75) return AttendanceStatus.PRESENT;
-      if (random < 0.85) return AttendanceStatus.LATE;
-      if (random < 0.90) return AttendanceStatus.EXCUSED;
+      if (finalRandom < 0.75) return AttendanceStatus.PRESENT;
+      if (finalRandom < 0.85) return AttendanceStatus.LATE;
+      if (finalRandom < 0.90) return AttendanceStatus.EXCUSED;
       return AttendanceStatus.ABSENT;
     }
   }
@@ -442,9 +498,11 @@ async function main() {
   await prisma.backupScheduleLog.deleteMany({});
   await prisma.backupSchedule.deleteMany({});
   await prisma.backupSettings.deleteMany({});
-  await prisma.user.deleteMany({});
   await prisma.emailRecipient.deleteMany({});
   await prisma.email.deleteMany({});
+  // Delete notifications before users
+  await prisma.notification.deleteMany({});
+  await prisma.user.deleteMany({});
 
   const collegeData = generateRealisticCollegeData();
 
@@ -491,37 +549,37 @@ async function main() {
   console.log('📅 Creating trimesters...');
   const trimesters = [
     {
-      name: 'First Trimester',
-      startDate: new Date('2025-04-01'),
-      endDate: new Date('2025-06-30'),
+      name: 'Current Semester 2025',
+      startDate: new Date('2025-08-01'),
+      endDate: new Date('2025-10-31'),
       year: 2025,
       semesterType: 'FIRST_SEMESTER',
-      registrationStart: new Date('2025-03-01'),
-      registrationEnd: new Date('2025-03-31'),
-      enrollmentStart: new Date('2025-03-15'),
-      enrollmentEnd: new Date('2025-03-31'),
+      registrationStart: new Date('2025-07-15'),
+      registrationEnd: new Date('2025-07-30'),
+      enrollmentStart: new Date('2025-07-20'),
+      enrollmentEnd: new Date('2025-07-30'),
     },
     {
-      name: 'Second Trimester',
-      startDate: new Date('2025-07-01'),
-      endDate: new Date('2025-09-30'),
+      name: 'Previous Semester 2025',
+      startDate: new Date('2025-05-15'),
+      endDate: new Date('2025-07-31'),
       year: 2025,
       semesterType: 'SECOND_SEMESTER',
-      registrationStart: new Date('2025-06-01'),
-      registrationEnd: new Date('2025-06-30'),
-      enrollmentStart: new Date('2025-06-15'),
-      enrollmentEnd: new Date('2025-06-30'),
+      registrationStart: new Date('2025-04-15'),
+      registrationEnd: new Date('2025-05-10'),
+      enrollmentStart: new Date('2025-04-20'),
+      enrollmentEnd: new Date('2025-05-10'),
     },
     {
-      name: 'Third Trimester',
-      startDate: new Date('2025-10-01'),
-      endDate: new Date('2025-12-31'),
-      year: 2025,
+      name: 'Next Semester 2026',
+      startDate: new Date('2026-02-03'),
+      endDate: new Date('2026-05-30'),
+      year: 2026,
       semesterType: 'THIRD_SEMESTER',
-      registrationStart: new Date('2025-09-01'),
-      registrationEnd: new Date('2025-09-30'),
-      enrollmentStart: new Date('2025-09-15'),
-      enrollmentEnd: new Date('2025-09-30'),
+      registrationStart: new Date('2026-01-15'),
+      registrationEnd: new Date('2026-02-01'),
+      enrollmentStart: new Date('2026-01-20'),
+      enrollmentEnd: new Date('2026-02-02'),
     }
   ];
 
@@ -812,7 +870,7 @@ async function main() {
           currentEnrollment: 20,
           courseId: course.courseId,
           semesterId: currentTrimester.semesterId, // Use currentTrimester's semesterId
-          academicYear: '2024-2025',
+          academicYear: '2025-2026',
           semester: SemesterType.FIRST_SEMESTER,
         }
       }));
@@ -866,7 +924,7 @@ async function main() {
         prerequisites: '',
           courseId: course.courseId,
           departmentId: course.departmentId,
-          academicYear: '2024-2025',
+          academicYear: '2025-2026',
           semester: SemesterType.FIRST_SEMESTER,
           maxStudents: 20,
         }
@@ -1003,7 +1061,7 @@ async function main() {
           slots: 100,
           scheduleType: ScheduleType.REGULAR,
           status: ScheduleStatus.ACTIVE,
-          academicYear: '2024-2025',
+          academicYear: '2025-2026',
           startDate: trimester.startDate,
           endDate: trimester.endDate,
           maxStudents: 100,
@@ -1102,12 +1160,22 @@ async function main() {
           0
         );
 
-        // Add some variation to arrival times
+        // Add more realistic variation to arrival times based on status and patterns
         if (status === AttendanceStatus.LATE) {
-          timestamp.setMinutes(timestamp.getMinutes() + faker.number.int({ min: 5, max: 30 }));
+          // Late arrivals: 5-45 minutes late, with some very late (1-2 hours)
+          const lateMinutes = Math.random() < 0.1 ? faker.number.int({ min: 60, max: 120 }) : faker.number.int({ min: 5, max: 45 });
+          timestamp.setMinutes(timestamp.getMinutes() + lateMinutes);
         } else if (status === AttendanceStatus.PRESENT) {
+          // Present: arrive 10 minutes early to 5 minutes late
           timestamp.setMinutes(timestamp.getMinutes() + faker.number.int({ min: -10, max: 5 }));
+        } else if (status === AttendanceStatus.ABSENT) {
+          // Absent: no timestamp variation needed, but add some random time for records
+          timestamp.setMinutes(timestamp.getMinutes() + faker.number.int({ min: 0, max: 5 }));
         }
+        
+        // Add some random variation to make timestamps more realistic
+        timestamp.setSeconds(faker.number.int({ min: 0, max: 59 }));
+        timestamp.setMilliseconds(faker.number.int({ min: 0, max: 999 }));
 
         attendanceRecords.push({
           subjectSchedId: subjectSchedule.subjectSchedId,
@@ -1242,7 +1310,7 @@ async function main() {
       title: 'Freshman Orientation',
       description: 'Welcome event for new students',
       eventType: 'ORIENTATION',
-      eventDate: new Date('2024-08-26'),
+      eventDate: new Date('2024-12-01'),
       location: 'Main Auditorium',
       capacity: 500,
     },
@@ -1250,7 +1318,7 @@ async function main() {
       title: 'Midterm Examinations',
       description: 'Midterm examination period',
       eventType: 'ACADEMIC',
-      eventDate: new Date('2024-10-15'),
+      eventDate: new Date('2025-06-15'),
       location: 'Various Classrooms',
       capacity: 1000,
     },
@@ -1258,7 +1326,7 @@ async function main() {
       title: 'Final Examinations',
       description: 'Final examination period',
       eventType: 'ACADEMIC',
-      eventDate: new Date('2024-12-10'),
+      eventDate: new Date('2025-10-25'),
       location: 'Various Classrooms',
       capacity: 1000,
     },
@@ -1266,7 +1334,7 @@ async function main() {
       title: 'Graduation Ceremony',
       description: 'Annual graduation ceremony for graduating students',
       eventType: 'GRADUATION',
-      eventDate: new Date('2024-04-15'),
+      eventDate: new Date('2026-05-15'),
       location: 'Main Auditorium',
       capacity: 800,
     },
@@ -1274,7 +1342,7 @@ async function main() {
       title: 'Academic Awards Ceremony',
       description: 'Recognition of outstanding students',
       eventType: 'ACADEMIC',
-      eventDate: new Date('2024-03-20'),
+      eventDate: new Date('2026-05-10'),
       location: 'Main Auditorium',
       capacity: 600,
     },
@@ -1630,13 +1698,13 @@ async function main() {
   // Admin-created general announcements
   const adminAnnouncements = [
     {
-      title: 'Welcome to First Semester 2024-2025',
-      content: 'Welcome back students! Classes begin on August 26, 2024.',
+      title: 'Welcome to Extended Academic Year 2024-2025',
+      content: 'Welcome back students! Classes begin on December 1, 2024.',
       isGeneral: true,
     },
     {
       title: 'Midterm Examination Schedule',
-      content: 'Midterm examinations will be held from October 15-19, 2024.',
+      content: 'Midterm examinations will be held from June 15-20, 2025.',
       isGeneral: true,
     },
     {
@@ -2084,7 +2152,9 @@ async function main() {
         recipient: faker.helpers.arrayElement([RecipientType.PARENT, RecipientType.STUDENT, RecipientType.BOTH]),
         method: NotificationMethod.EMAIL,
         status: faker.helpers.arrayElement([NotificationStatus.PENDING, NotificationStatus.SENT, NotificationStatus.FAILED]),
-        sentAt: faker.date.between({ from: absence.timestamp, to: new Date() }) || absence.timestamp,
+        sentAt: absence.timestamp && absence.timestamp < new Date() 
+          ? faker.date.between({ from: absence.timestamp, to: new Date() })
+          : absence.timestamp || new Date(),
         createdAt: absence.timestamp,
       }
     });

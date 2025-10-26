@@ -252,22 +252,8 @@ export async function POST(req: NextRequest) {
 
       // Academic Attendance Records Table
       if (includeFlags?.includeTable && Array.isArray(tableView) && tableView.length > 0) {
-        // Add section title
-        const startY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 15 : 65;
-        
-        // Academic section title with underline
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(25, 25, 112); // Dark blue for academic feel
-        doc.text('DETAILED ATTENDANCE RECORDS', 14, startY);
-        
-        // Underline for section title
-        doc.setDrawColor(25, 25, 112);
-        doc.setLineWidth(1);
-        doc.line(14, startY + 2, 150, startY + 2);
-        
-        // Reset text color
-        doc.setTextColor(0, 0, 0);
+        // Calculate starting position for table
+        const startY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 15 : 25;
         
         // Use selected columns if provided, otherwise use all columns
         let tvCols: string[];
@@ -302,11 +288,11 @@ export async function POST(req: NextRequest) {
           body: tableView.map((r: any) => tvCols.map(c => String(r[c] ?? ''))),
           startY: startY + 8,
           styles: { 
-            fontSize: 6,
-            cellPadding: 1,
+            fontSize: 8,
+            cellPadding: 2,
             overflow: 'linebreak',
             lineWidth: 0.1,
-            halign: 'center'
+            halign: 'left'
           },
           headStyles: {
             fillColor: [25, 25, 112],
@@ -314,14 +300,72 @@ export async function POST(req: NextRequest) {
             fontStyle: 'bold',
             fontSize: 8,
             cellPadding: 4,
-            minCellHeight: 8
+            minCellHeight: 12,
+            halign: 'center'
           },
           alternateRowStyles: {
             fillColor: [248, 250, 252]
           },
           tableLineColor: [200, 200, 200],
+          margin: { left: 14, right: 14, bottom: 30 },
           columnStyles: {
-            // Academic column styling with adjusted widths
+            // Optimized column styling with consistent font sizes and better widths
+            [tvCols.findIndex(col => col.toLowerCase().includes('studentname'))]: { 
+              cellWidth: 35,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('studentid'))]: { 
+              cellWidth: 20,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('department'))]: { 
+              cellWidth: 35,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('course'))]: { 
+              cellWidth: 35,
+              halign: 'left',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('yearlevel'))]: { 
+              cellWidth: 18,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('status'))]: { 
+              cellWidth: 20,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('attendancerate'))]: { 
+              cellWidth: 10,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('totalclasses'))]: { 
+              cellWidth: 10,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('present'))]: { 
+              cellWidth: 25,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('late'))]: { 
+              cellWidth: 20,
+              halign: 'center',
+              fontSize: 8
+            },
+            [tvCols.findIndex(col => col.toLowerCase().includes('absent'))]: { 
+              cellWidth: 20,
+              halign: 'center',
+              fontSize: 8
+            },
+            // Fallback for other columns
             [tvCols.findIndex(col => col.toLowerCase().includes('date'))]: { 
               cellWidth: 20,
               halign: 'center',
@@ -337,32 +381,12 @@ export async function POST(req: NextRequest) {
               halign: 'left',
               fontSize: 8
             },
-            [tvCols.findIndex(col => col.toLowerCase().includes('status'))]: { 
-              cellWidth: 12,
-              halign: 'center',
-              fontSize: 8
-            },
             [tvCols.findIndex(col => col.toLowerCase().includes('room'))]: { 
               cellWidth: 12,
               halign: 'center',
               fontSize: 8
             },
             [tvCols.findIndex(col => col.toLowerCase().includes('notes'))]: { 
-              cellWidth: 20,
-              halign: 'left',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('studentname'))]: { 
-              cellWidth: 25,
-              halign: 'left',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('studentid'))]: { 
-              cellWidth: 15,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('department'))]: { 
               cellWidth: 20,
               halign: 'left',
               fontSize: 8
@@ -377,7 +401,8 @@ export async function POST(req: NextRequest) {
           head: [[ 'Department', 'Code', 'Attendance %', 'Count' ]],
           body: analytics.departmentStats.map((d: any) => [d.name, d.code, (d.attendanceRate ?? 0).toFixed(1), d.count ?? 0]),
           styles: { fontSize: 8 },
-          startY: (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 36
+          startY: (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 36,
+          margin: { left: 14, right: 14, bottom: 30 }
         });
       }
 
@@ -387,14 +412,82 @@ export async function POST(req: NextRequest) {
           head: [[ 'Risk Level', 'Count' ]],
           body: analytics.riskLevelData.map((r: any) => [r.level, r.count]),
           styles: { fontSize: 8 },
-          startY: (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 36
+          startY: (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 36,
+          margin: { left: 14, right: 14, bottom: 30 }
         });
       }
 
       // Embedded charts (captured client-side as data URLs)
       if (includeFlags?.includeCharts && chartImages && typeof chartImages === 'object') {
         let y = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 34;
+        
+        // Handle modal content specially - make it full page with proper margins
+        const modalContentKey = Object.keys(chartImages).find(key => 
+          key.toLowerCase().includes('modal') || key.toLowerCase().includes('content')
+        );
+        
+        if (modalContentKey && chartImages[modalContentKey]) {
+          try {
+            // Add new page for modal content
+            doc.addPage();
+            
+            // Calculate available space with margins
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const margin = 20; // 20pt margins on all sides
+            const availableWidth = pageWidth - (margin * 2);
+            const availableHeight = pageHeight - (margin * 2) - 20; // Extra space for footer
+            
+            // Calculate optimal dimensions for modal content
+            // Modal content is typically in a 2-column layout (Visual Overview + Detailed Breakdown)
+            // Use landscape orientation with proper aspect ratio
+            const aspectRatio = 1.8; // Slightly wider for 2-column layout
+            
+            let finalWidth = availableWidth;
+            let finalHeight = availableWidth / aspectRatio;
+            
+            // Ensure we don't exceed available height
+            if (finalHeight > availableHeight) {
+              finalHeight = availableHeight;
+              finalWidth = availableHeight * aspectRatio;
+            }
+            
+            // Ensure minimum size for readability
+            const minWidth = 200;
+            const minHeight = 150;
+            if (finalWidth < minWidth) {
+              finalWidth = minWidth;
+              finalHeight = minWidth / aspectRatio;
+            }
+            if (finalHeight < minHeight) {
+              finalHeight = minHeight;
+              finalWidth = minHeight * aspectRatio;
+            }
+            
+            // Center the image on the page
+            const x = (pageWidth - finalWidth) / 2;
+            const y = margin + 10; // Start below header
+            
+            // Add title
+         /*   doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(25, 25, 112);
+            doc.text('Analytics Overview', margin, y - 5);*/
+            
+            // Add the modal content image
+            doc.addImage(chartImages[modalContentKey], 'PNG', x, y, finalWidth, finalHeight);
+            
+            console.log(`✅ Modal content added to PDF: ${finalWidth}x${finalHeight} at (${x}, ${y})`);
+            console.log(`📊 Page dimensions: ${pageWidth}x${pageHeight}, Available: ${availableWidth}x${availableHeight}`);
+          } catch (error) {
+            console.warn('Failed to add modal content to PDF:', error);
+          }
+        }
+        
+        // Handle other chart images normally
         for (const [key, dataUrl] of Object.entries(chartImages)) {
+          if (key === modalContentKey) continue; // Skip modal content as it's handled above
+          
           try {
             if (y > 190) { doc.addPage(); y = 20; }
             doc.setFontSize(10);
@@ -416,21 +509,21 @@ export async function POST(req: NextRequest) {
         // Academic footer line
         doc.setDrawColor(25, 25, 112);
         doc.setLineWidth(1);
-        doc.line(14, 200, 283, 200);
+        doc.line(14, 185, 283, 185);
         
         // Institution footer
-        doc.setFontSize(9);
+        doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(25, 25, 112);
-        doc.text('ICCT - Institute of Computer and Communication Technology', 14, 205);
+        doc.text('ICCT - Institute of Computer and Communication Technology', 14, 190);
         
         // Page numbering and date
-        doc.setFontSize(8);
+        doc.setFontSize(6);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(100, 100, 100);
-        doc.text(`Page ${i} of ${pageCount}`, 250, 205);
-        doc.text(`Report Generated: ${new Date().toLocaleDateString()}`, 14, 210);
-        doc.text('Smart Attendance Management System', 14, 215);
+        doc.text(`Page ${i} of ${pageCount}`, 250, 190);
+        doc.text(`Report Generated: ${new Date().toLocaleDateString()}`, 14, 195);
+        doc.text('Smart Attendance Management System', 14, 200);
       }
 
       const pdfBuffer = Buffer.from(doc.output('arraybuffer'));

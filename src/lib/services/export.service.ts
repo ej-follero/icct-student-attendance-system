@@ -111,21 +111,8 @@ export class ExportService {
           nextY += 10;
         }
 
-        // Embed chart images if provided
+        // Chart images are now handled by the backend PDF generation
         let currentY = Math.max(nextY, 22);
-        if (options.chartImages && Object.keys(options.chartImages).length > 0) {
-          for (const [key, dataUrl] of Object.entries(options.chartImages)) {
-            try {
-              if (currentY > 180) { doc.addPage(); currentY = 20; }
-              doc.setFontSize(10);
-              doc.text(String(key).replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), 14, currentY);
-              currentY += 4;
-              doc.addImage(String(dataUrl), 'PNG', 14, currentY, 120, 60);
-              currentY += 64;
-            } catch {}
-          }
-          currentY += 6; // extra spacing before table
-        }
 
         const head = [columns.map(c => c.label)];
         const body = data.map(row => columns.map(c => {
@@ -139,17 +126,44 @@ export class ExportService {
           body,
           startY: Math.max(currentY, 20),
           tableWidth: 'auto',
-          styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak', cellWidth: 'wrap' },
-          headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold', fontSize: 10 },
-          columnStyles: { 0: { minCellWidth: 24 } },
-          margin: { left: 14, right: 14, bottom: 14 },
+          styles: { 
+            fontSize: 8, 
+            cellPadding: 2, 
+            overflow: 'linebreak', 
+            cellWidth: 'wrap',
+            halign: 'left',
+            valign: 'middle'
+          },
+          headStyles: { 
+            fillColor: [41, 128, 185], 
+            textColor: 255, 
+            fontStyle: 'bold', 
+            fontSize: 8,
+            cellPadding: 4,
+            minCellHeight: 12,
+            halign: 'center'
+          },
+          columnStyles: { 
+            0: { cellWidth: 35, fontSize: 8, halign: 'center' }, // Student Name
+            1: { cellWidth: 20, fontSize: 8, halign: 'center' }, // Student ID
+            2: { cellWidth: 35, fontSize: 8, halign: 'center' }, // Department
+            3: { cellWidth: 35, fontSize: 8, halign: 'left' }, // Course
+            4: { cellWidth: 18, fontSize: 8, halign: 'center' }, // Year Level
+            5: { cellWidth: 20, fontSize: 8, halign: 'center' }, // Status
+            6: { cellWidth: 10, fontSize: 8, halign: 'center' }, // Attendance Rate
+            7: { cellWidth: 10, fontSize: 8, halign: 'center' }, // Total Classes
+            8: { cellWidth: 25, fontSize: 8, halign: 'center' }, // Present
+            9: { cellWidth: 20, fontSize: 8, halign: 'center' }, // Late
+            10: { cellWidth: 20, fontSize: 8, halign: 'center' } // Absent
+          },
+          margin: { left: 14, right: 14, bottom: 30 },
           didDrawPage: (data) => {
             // Footer with timestamp and page number
             const pageWidth = doc.internal.pageSize.getWidth();
             const pageHeight = doc.internal.pageSize.getHeight();
-            doc.setFontSize(9);
+            doc.setFontSize(6);
             const stamp = `Generated on ${new Date().toLocaleString()}  •  Page ${data.pageNumber}`;
-            doc.text(stamp, pageWidth - 14, pageHeight - 8, { align: 'right' });
+            doc.text(stamp, pageWidth - 14, pageHeight - 18, { align: 'right' });
           }
         });
 
@@ -227,9 +241,9 @@ export class ExportService {
     if (options.selectedColumns && options.selectedColumns.length > 0) {
       finalKeys = options.selectedColumns.filter(col => keys.includes(col));
     } else {
-      // Preferred column order for student exports
+      // Preferred column order for simplified student exports
       const preferredOrder = exportData?.type === 'student'
-        ? ['id', 'studentNumber', 'name', 'department', 'courseCode', 'yearLevel', 'status', 'attendanceRate', 'totalClasses', 'attendedClasses', 'lateClasses', 'absentClasses']
+        ? ['Student Name', 'Student ID', 'Department', 'Course', 'Year Level', 'Status', 'Attendance Rate', 'Total Classes', 'Present', 'Late', 'Absent']
         : [];
       finalKeys = [
         ...preferredOrder.filter(k => keys.includes(k)),
@@ -239,10 +253,8 @@ export class ExportService {
     
     const columns = finalKeys.map(key => ({
       key,
-      label: key
-        .replace(/_/g, ' ')
-        .replace(/([a-z])([A-Z])/g, '$1 $2')
-        .replace(/^\w/, c => c.toUpperCase())
+      label: key, // Keep original labels since they're already human-friendly
+      type: key.includes('Rate') || key.includes('Classes') ? 'number' : 'text'
     }));
 
     // If Excel is requested, generate client-side to avoid server encoding issues

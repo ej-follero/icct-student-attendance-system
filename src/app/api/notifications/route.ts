@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+// Simple cache for notifications
+const notificationsCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
 // GET /api/notifications
 // Query params: isRead (true|false), type, priority, limit, cursor
 export async function GET(request: NextRequest) {
@@ -19,6 +23,15 @@ export async function GET(request: NextRequest) {
     const limit = Math.max(1, Math.min(100, Number(searchParams.get('limit') || 20)));
     const cursor = searchParams.get('cursor') || undefined;
 
+    // Create cache key
+    const cacheKey = `${userId}-${isReadParam || 'all'}-${type || 'all'}-${priority || 'all'}-${limit}-${cursor || 'first'}`;
+    
+    // Check cache first
+    const cached = notificationsCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+      return NextResponse.json(cached.data);
+    }
+
     const where: any = { userId };
     if (isReadParam === 'true') where.isRead = true;
     if (isReadParam === 'false') where.isRead = false;
@@ -33,7 +46,15 @@ export async function GET(request: NextRequest) {
     });
 
     const nextCursor = notifications.length === limit ? notifications[notifications.length - 1].id : null;
-    return NextResponse.json({ data: notifications, nextCursor });
+    const result = { data: notifications, nextCursor };
+    
+    // Cache the result
+    notificationsCache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    });
+    
+    return NextResponse.json(result);
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed to fetch notifications' }, { status: 500 });
   }

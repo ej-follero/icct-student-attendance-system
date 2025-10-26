@@ -25,8 +25,6 @@ const nextConfig = {
   // Performance optimizations
   experimental: {
     optimizePackageImports: ['@radix-ui/react-icons', 'lucide-react'],
-    // Enable static optimization
-    staticPageGenerationTimeout: 1000,
   },
   // External packages for server components
   serverExternalPackages: ['@prisma/client', 'bcrypt', 'bcryptjs'],

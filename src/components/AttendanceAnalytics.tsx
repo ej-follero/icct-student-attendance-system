@@ -147,6 +147,8 @@ interface AttendanceAnalyticsProps {
   }) => void;
   // Clear analytics filters callback
   onClearAnalytics?: () => void;
+  // Apply filters callback - called when Apply button is clicked
+  onApplyFilters?: () => void;
 }
 
 // Utility functions imported from analytics-utils
@@ -386,7 +388,8 @@ export const FullscreenAttendanceDistributionModal = ({
   subjects = [],
   yearLevels = [],
   showSecondaryFilters = true,
-  loading = false
+  loading = false,
+  appliedFilters
 }: {
   totalPresent: number;
   totalLate: number;
@@ -408,6 +411,14 @@ export const FullscreenAttendanceDistributionModal = ({
   yearLevels?: Array<{ id: string; name: string }>;
   showSecondaryFilters?: boolean;
   loading?: boolean;
+  appliedFilters?: {
+    department?: string;
+    course?: string;
+    section?: string;
+    yearLevel?: string;
+    subject?: string;
+    timeRange?: any;
+  };
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [localSelectedSubject, setLocalSelectedSubject] = useState(selectedSubject);
@@ -493,6 +504,7 @@ export const FullscreenAttendanceDistributionModal = ({
             onExport={onExport} 
             modalType="attendance-distribution"
             chartData={[{ totalPresent, totalLate, totalAbsent }]}
+            appliedFilters={appliedFilters}
           />
         </div>
       </DialogContent>
@@ -1439,6 +1451,8 @@ export const AttendanceDistributionChart = ({
   totalAbsent: number;
 }) => {
   console.log('📊 AttendanceDistributionChart data:', { totalPresent, totalLate, totalAbsent });
+  console.log('📊 AttendanceDistributionChart - Using summary data from API');
+  console.log('📊 AttendanceDistributionChart - This data reflects all applied filters (department, course, section, year level, time range)');
   
   const chartData = [
     { name: 'Present', value: totalPresent, color: '#1e40af', icon: '✓' },
@@ -1740,20 +1754,61 @@ const SecondaryFilters = ({
 const DownloadDropdown = ({ 
   onExport, 
   modalType, 
-  chartData 
+  chartData,
+  appliedFilters
 }: { 
   onExport?: (format: 'pdf' | 'csv' | 'excel') => void;
   modalType?: string;
   chartData?: any;
+  appliedFilters?: {
+    department?: string;
+    course?: string;
+    section?: string;
+    yearLevel?: string;
+    subject?: string;
+    timeRange?: any;
+  };
 }) => {
-  const handleModalExport = async (format: 'pdf' | 'csv' | 'excel') => {
+  const [isExporting, setIsExporting] = useState(false);
+  
+  const handleModalExport = async (format: 'pdf' | 'csv' | 'excel' = 'pdf') => {
+    setIsExporting(true);
     try {
       console.log(`🎯 Modal export triggered for ${modalType} with format ${format}`);
       
       // Wait for modal to be fully rendered and visible
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Capture chart elements from within the modal context
+      // Import html2canvas dynamically
+      const html2canvas = (await import('html2canvas')).default;
+      
+      // Capture the entire modal content (both Visual Overview and Detailed Breakdown)
+      const modalContent = document.querySelector('[role="dialog"] .grid') as HTMLElement;
+      let chartImages: Record<string, string> = {};
+      
+      if (modalContent) {
+        try {
+          console.log('📸 Capturing modal content with html2canvas...');
+          const canvas = await html2canvas(modalContent, {
+            background: '#ffffff',
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            width: modalContent.offsetWidth,
+            height: modalContent.offsetHeight
+          });
+          
+          const imageDataUrl = canvas.toDataURL('image/png', 1.0);
+          chartImages['Modal Content'] = imageDataUrl;
+          console.log('✅ Modal content captured successfully');
+          console.log(`📸 Captured dimensions: ${canvas.width}x${canvas.height}`);
+          console.log(`📸 Modal element dimensions: ${modalContent.offsetWidth}x${modalContent.offsetHeight}`);
+        } catch (captureError) {
+          console.warn('Failed to capture modal content:', captureError);
+        }
+      }
+      
+      // Also capture individual chart elements as fallback
       const modalChartElements = {
         attendanceDistribution: document.querySelector('[data-chart="attendance-distribution"]') as HTMLElement,
         weeklyTrend: document.querySelector('[data-chart="weekly-trend"]') as HTMLElement,
@@ -1763,6 +1818,27 @@ const DownloadDropdown = ({
         patternAnalysis: document.querySelector('[data-chart="pattern-analysis"]') as HTMLElement,
         streakAnalysis: document.querySelector('[data-chart="streak-analysis"]') as HTMLElement
       };
+
+      // Capture individual charts if modal content capture failed
+      if (Object.keys(chartImages).length === 0) {
+        console.log('📸 Capturing individual chart elements...');
+        for (const [chartName, element] of Object.entries(modalChartElements)) {
+          if (element) {
+            try {
+              const canvas = await html2canvas(element, {
+                background: '#ffffff',
+                useCORS: true,
+                allowTaint: true,
+                logging: false
+              });
+              chartImages[chartName] = canvas.toDataURL('image/png', 1.0);
+              console.log(`✅ Captured ${chartName}`);
+            } catch (error) {
+              console.warn(`Failed to capture ${chartName}:`, error);
+            }
+          }
+        }
+      }
 
       // Debug: Log which modal charts are found with detailed info
       console.log('🔍 Modal chart elements found:', Object.entries(modalChartElements)
@@ -1776,15 +1852,81 @@ const DownloadDropdown = ({
         }))
       );
 
-      // Create export data with modal-specific information
+      console.log('📸 Captured images:', Object.keys(chartImages));
+
+      // Fetch table records from the Student Attendance Records with current filters
+      let tableRecords = [];
+      try {
+        // Build query parameters with current analytics filters
+        const params = new URLSearchParams();
+        params.append('page', '1');
+        params.append('pageSize', '10000');
+        
+        // Add current analytics filters if available
+        if (appliedFilters?.department && appliedFilters.department !== 'all') {
+          params.append('departmentId', appliedFilters.department);
+        }
+        if (appliedFilters?.course && appliedFilters.course !== 'all') {
+          params.append('courseId', appliedFilters.course);
+        }
+        if (appliedFilters?.section && appliedFilters.section !== 'all') {
+          params.append('sectionId', appliedFilters.section);
+        }
+        if (appliedFilters?.yearLevel && appliedFilters.yearLevel !== 'all') {
+          params.append('yearLevel', appliedFilters.yearLevel);
+        }
+        if (appliedFilters?.subject && appliedFilters.subject !== 'all') {
+          params.append('subjectId', appliedFilters.subject);
+        }
+        if (appliedFilters?.timeRange?.start) {
+          params.append('startDate', appliedFilters.timeRange.start.toISOString());
+        }
+        if (appliedFilters?.timeRange?.end) {
+          params.append('endDate', appliedFilters.timeRange.end.toISOString());
+        }
+        
+        const response = await fetch(`/api/attendance/students?${params.toString()}`);
+        if (response.ok) {
+          const data = await response.json();
+          tableRecords = Array.isArray(data) ? data : (data.items || []);
+          console.log(`📊 Fetched ${tableRecords.length} table records for export with filters:`, params.toString());
+        }
+      } catch (error) {
+        console.warn('Failed to fetch table records for export:', error);
+      }
+
+      // Create simplified table records for cleaner PDF export
+      const simplifiedTableRecords = (tableRecords || []).map((record: any) => ({
+        'Student Name': record.studentName || 'N/A',
+        'Student ID': record.studentIdNum || record.studentId || 'N/A',
+        'Department': record.department || 'N/A',
+        'Course': record.course || 'N/A',
+        'Year Level': record.yearLevel || 'N/A',
+        'Status': record.status || 'N/A',
+        'Attendance Rate': `${record.attendanceRate || 0}%`,
+        'Total Classes': record.totalScheduledClasses || 0,
+        'Present': record.attendedClasses || 0,
+        'Late': record.lateClasses || 0,
+        'Absent': record.absentClasses || 0
+      }));
+
+      // Create export data with proper structure for ExportService
       const exportData = {
         type: 'student' as const,
-        data: chartData || [],
-        filters: {
+        data: simplifiedTableRecords, // Use simplified table records as the main data
+        analytics: {
           modalType: modalType || 'unknown',
+          chartData: chartData || [],
           exportSource: 'modal'
         },
-        timeRange: {
+        tableView: simplifiedTableRecords, // Include simplified table records for PDF export
+        filtersSnapshot: {
+          modalType: modalType || 'unknown',
+          exportSource: 'modal',
+          appliedFilters: appliedFilters,
+          generatedAt: new Date().toISOString()
+        },
+        timeRange: appliedFilters?.timeRange || {
           start: new Date('2025-04-01'),
           end: new Date('2025-06-30'),
           preset: 'semester' as const
@@ -1796,42 +1938,154 @@ const DownloadDropdown = ({
         filename: `${modalType}-${format}-${new Date().toISOString().split('T')[0]}`,
         includeCharts: true,
         includeFilters: true,
-        chartElements: modalChartElements
+        includeTable: true,
+        includeSummary: true,
+        chartElements: modalChartElements,
+        chartImages: chartImages // Pass the captured images
       };
 
+      // Debug: Log export data structure
+      console.log('📊 Export data structure:', {
+        type: exportData.type,
+        dataLength: exportData.data?.length || 0,
+        tableViewLength: exportData.tableView?.length || 0,
+        hasAnalytics: !!exportData.analytics,
+        hasFilters: !!exportData.filtersSnapshot,
+        options: options
+      });
+
+      try {
       await ExportService.exportAnalytics(exportData, options);
-      
-      // Show success toast
-      console.log(`✅ Modal export completed for ${modalType}`);
+        console.log(`✅ Modal export completed for ${modalType} with ${tableRecords.length} table records`);
+        
+        // Show success toast notification
+        if (typeof window !== 'undefined') {
+          const { toast } = await import('sonner');
+          toast.success('Export Successful', {
+            description: `${modalType} report has been downloaded successfully.`,
+            duration: 3000
+          });
+        }
+      } catch (exportError) {
+        console.error('ExportService failed:', exportError);
+        // Fallback: Try to export just the table records as CSV
+        if (tableRecords.length > 0) {
+          console.log('🔄 Attempting fallback CSV export...');
+          const csvData = (tableRecords || []).map((record: any) => ({
+            'Student Name': record.studentName || 'N/A',
+            'Student ID': record.studentIdNum || record.studentId || 'N/A',
+            'Department': record.department || 'N/A',
+            'Course': record.course || 'N/A',
+            'Year Level': record.yearLevel || 'N/A',
+            'Status': record.status || 'N/A',
+            'Attendance Rate': `${record.attendanceRate || 0}%`,
+            'Total Classes': record.totalScheduledClasses || 0,
+            'Present': record.attendedClasses || 0,
+            'Late': record.lateClasses || 0,
+            'Absent': record.absentClasses || 0
+          }));
+          
+          const csvContent = [
+            Object.keys(csvData[0]).join(','),
+            ...csvData.map((row: any) => Object.values(row).map((val: any) => `"${val}"`).join(','))
+          ].join('\n');
+          
+          const blob = new Blob([csvContent], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${modalType}-fallback-${new Date().toISOString().split('T')[0]}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          console.log('✅ Fallback CSV export completed');
+          
+          // Show success toast notification for fallback export
+          if (typeof window !== 'undefined') {
+            const { toast } = await import('sonner');
+            toast.success('Export Successful', {
+              description: `${modalType} report has been downloaded successfully (CSV format).`,
+              duration: 3000
+            });
+          }
+        } else {
+          throw exportError;
+        }
+      }
     } catch (error) {
       console.error('Modal export failed:', error);
+      
+      // Show error toast notification
+      if (typeof window !== 'undefined') {
+        const { toast } = await import('sonner');
+        toast.error('Export Failed', {
+          description: `Failed to export ${modalType} report. Please try again.`,
+          duration: 5000
+        });
+      }
+      
       throw error;
+    } finally {
+      setIsExporting(false);
     }
   };
 
   return (
+    <div className="flex items-center gap-2">
+      {/* Primary PDF Export Button */}
+      <Button 
+        variant="outline" 
+        size="lg" 
+        className="h-8 px-3 text-sm rounded bg-blue-600 text-white border-blue-600 hover:bg-blue-700 hover:text-white hover:border-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        onClick={() => handleModalExport('pdf')}
+        disabled={isExporting}
+      >
+        {isExporting ? (
+          <>
+            <div className="w-3 h-3 mr-1 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            Exporting...
+          </>
+        ) : (
+          <>
+            <Download className="w-3 h-3 mr-1" />
+            Export PDF
+          </>
+        )}
+      </Button>
+      
+      {/* Additional Format Options Dropdown */}
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="lg" className="h-8 px-3 text-sm rounded bg-blue-600 text-white border-blue-600 hover:bg-blue-700 hover:text-white hover:border-blue-700">
-          <Download className="w-3 h-3 mr-1" />
-          Export
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-8 px-2 text-sm rounded border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isExporting}
+          >
+            <ChevronDown className="w-3 h-3" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40 text-sm">
-        <DropdownMenuItem onClick={() => handleModalExport('pdf')}>
-          <FileText className="w-3 h-3 mr-2" />
-          PDF
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleModalExport('csv')}>
+        <DropdownMenuContent align="end" className="w-32 text-sm">
+        <DropdownMenuItem 
+          onClick={() => handleModalExport('csv')}
+          disabled={isExporting}
+          className={isExporting ? 'opacity-50 cursor-not-allowed' : ''}
+        >
           <FileSpreadsheet className="w-3 h-3 mr-2" />
           CSV
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleModalExport('excel')}>
+        <DropdownMenuItem 
+          onClick={() => handleModalExport('excel')}
+          disabled={isExporting}
+          className={isExporting ? 'opacity-50 cursor-not-allowed' : ''}
+        >
           <FileSpreadsheet className="w-3 h-3 mr-2" />
           Excel
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    </div>
   );
 };
 
@@ -2037,9 +2291,17 @@ export const FullscreenPatternAnalysisModal = ({
                       />
                       <Legend 
                         verticalAlign="top" 
-                        height={36}
+                        height={50}
                         iconType="line"
                         wrapperStyle={{ paddingBottom: '10px' }}
+                        formatter={(value, entry) => {
+                          if (value === 'Attendance Rate') {
+                            return 'Daily Attendance Rate';
+                          } else if (value === 'Moving Average') {
+                            return '7-Day Moving Average';
+                          }
+                          return value;
+                        }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -2424,7 +2686,8 @@ export function AttendanceAnalytics({
   
   // New filter props
   onFiltersChange,
-  onClearAnalytics
+  onClearAnalytics,
+  onApplyFilters
 }: AttendanceAnalyticsProps) {
   console.log('🎯 AttendanceAnalytics received data:', {
     dataLength: data?.length,
@@ -2487,6 +2750,11 @@ export function AttendanceAnalytics({
   const [appliedInternalSelectedSubject, setAppliedInternalSelectedSubject] = useState(selectedSubject || 'all');
   const [appliedTimeRange, setAppliedTimeRange] = useState<TimeRange>({ ...timeRange });
 
+  // Remove auto-sync - filters should only apply when user clicks Apply button
+  // useEffect(() => {
+  //   setAppliedTimeRange({ ...timeRange });
+  // }, [timeRange]);
+
   const hasPendingChanges = useMemo(() => {
     return (
       selectedDepartment !== appliedSelectedDepartment ||
@@ -2537,6 +2805,8 @@ export function AttendanceAnalytics({
     };
     // @ts-ignore optional
     if (typeof onFiltersChange === 'function') onFiltersChange(snapshot);
+    // Call the apply filters callback to trigger data fetch
+    if (typeof onApplyFilters === 'function') onApplyFilters();
     try { setToast({ message: 'Filters applied', type: 'success' }); } catch {}
   }, [
     selectedDepartment,
@@ -2546,7 +2816,8 @@ export function AttendanceAnalytics({
     selectedYearLevel,
     internalSelectedSubject,
     timeRange,
-    onFiltersChange
+    onFiltersChange,
+    onApplyFilters
   ]);
 
   const clearAnalyticsFilters = useCallback(() => {
@@ -2745,7 +3016,7 @@ export function AttendanceAnalytics({
 
   // Dynamic X-axis configuration based on time filter
   const getXAxisConfig = () => {
-    if (!appliedTimeRange) return { dataKey: 'week', label: 'Week' };
+    if (!appliedTimeRange) return { dataKey: 'date', label: 'Date' };
 
     switch (appliedTimeRange.preset) {
       case 'today':
@@ -2761,11 +3032,11 @@ export function AttendanceAnalytics({
         };
       case 'week':
         return { 
-          dataKey: 'day', 
-          label: 'Day',
+          dataKey: 'date', 
+          label: 'Date',
           tickFormatter: (value: any) => {
-            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            return days[value] || value;
+            const date = new Date(value);
+            return `${date.getMonth() + 1}/${date.getDate()}`;
           }
         };
       case 'month':
@@ -2802,7 +3073,7 @@ export function AttendanceAnalytics({
           }
         };
       default:
-        return { dataKey: 'week', label: 'Week' };
+        return { dataKey: 'date', label: 'Date' };
     }
   };
 
@@ -2966,27 +3237,75 @@ export function AttendanceAnalytics({
   // Generate dynamic chart data using real database data
   const generateDynamicChartData = () => {
     console.log('📊 generateDynamicChartData - chartData.timeBasedData:', chartData.timeBasedData);
-    console.log('📊 generateDynamicChartData - timeRange:', timeRange?.preset);
-    console.log('📊 generateDynamicChartData - selectedCourse:', selectedCourse);
-    return chartData.timeBasedData || [];
+    console.log('📊 generateDynamicChartData - timeRange:', appliedTimeRange?.preset);
+    console.log('📊 generateDynamicChartData - selectedCourse:', appliedSelectedCourse);
+    console.log('📊 generateDynamicChartData - data length:', chartData.timeBasedData?.length || 0);
+    console.log('📊 generateDynamicChartData - This data reflects all applied filters (department, course, section, year level, time range)');
+    
+    const data = chartData.timeBasedData || [];
+    
+    // Log sample data points for debugging
+    if (data.length > 0) {
+      console.log('📊 Sample data points:', data.slice(0, 3));
+      console.log('📊 Data keys:', Object.keys(data[0] || {}));
+    }
+    
+    return data;
   };
 
   // Generate late arrival trend data using real database data
   const generateLateArrivalData = () => {
     console.log('📊 generateLateArrivalData - chartData.lateArrivalData:', chartData.lateArrivalData);
-    return chartData.lateArrivalData || [];
+    console.log('📊 generateLateArrivalData - timeRange:', appliedTimeRange?.preset);
+    console.log('📊 generateLateArrivalData - data length:', chartData.lateArrivalData?.length || 0);
+    console.log('📊 generateLateArrivalData - This data reflects all applied filters (department, course, section, year level, time range)');
+    
+    const data = chartData.lateArrivalData || [];
+    
+    // Log sample data points for debugging
+    if (data.length > 0) {
+      console.log('📊 Late arrival sample data points:', data.slice(0, 3));
+      console.log('📊 Late arrival data keys:', Object.keys(data[0] || {}));
+    }
+    
+    return data;
   };
 
   // Generate pattern analysis data using real database data
   const generatePatternAnalysisData = useMemo(() => {
-    return chartData.patternData || [];
-  }, [chartData.patternData]);
+    console.log('📊 generatePatternAnalysisData - chartData.patternData:', chartData.patternData);
+    console.log('📊 generatePatternAnalysisData - timeRange:', appliedTimeRange?.preset);
+    console.log('📊 generatePatternAnalysisData - data length:', chartData.patternData?.length || 0);
+    console.log('📊 generatePatternAnalysisData - This data reflects all applied filters (department, course, section, year level, time range)');
+    
+    const data = chartData.patternData || [];
+    
+    // Log sample data points for debugging
+    if (data.length > 0) {
+      console.log('📊 Pattern analysis sample data points:', data.slice(0, 3));
+      console.log('📊 Pattern analysis data keys:', Object.keys(data[0] || {}));
+    }
+    
+    return data;
+  }, [chartData.patternData, appliedTimeRange]);
 
   // Generate streak analysis data using real database data
   const generateStreakAnalysisData = useMemo(() => {
     console.log('📊 generateStreakAnalysisData - chartData.streakData:', chartData.streakData);
-    return chartData.streakData || { data: [], stats: { maxGoodStreak: 0, maxPoorStreak: 0, currentStreak: 0, currentStreakType: 'none', totalGoodDays: 0, totalPoorDays: 0 } };
-  }, [chartData.streakData]);
+    console.log('📊 generateStreakAnalysisData - timeRange:', appliedTimeRange?.preset);
+    console.log('📊 generateStreakAnalysisData - data length:', chartData.streakData?.data?.length || 0);
+    console.log('📊 generateStreakAnalysisData - This data reflects all applied filters (department, course, section, year level, time range)');
+    
+    const data = chartData.streakData || { data: [], stats: { maxGoodStreak: 0, maxPoorStreak: 0, currentStreak: 0, currentStreakType: 'none', totalGoodDays: 0, totalPoorDays: 0 } };
+    
+    // Log sample data points for debugging
+    if (data.data && data.data.length > 0) {
+      console.log('📊 Streak analysis sample data points:', data.data.slice(0, 3));
+      console.log('📊 Streak analysis data keys:', Object.keys(data.data[0] || {}));
+    }
+    
+    return data;
+  }, [chartData.streakData, appliedTimeRange]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -3368,7 +3687,42 @@ export function AttendanceAnalytics({
               </TabsList>
               
               {/* Filters moved to next line below tabs */}
-              <div className="flex w-full justify-end">
+              <div className="flex w-full justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant={hasPendingChanges ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-8 px-3 text-xs rounded"
+                    onClick={handleApplyFilters}
+                    disabled={!hasPendingChanges}
+                    title={hasPendingChanges ? 'Apply current filters' : 'No changes to apply'}
+                  >
+                    Apply filters
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2 text-xs rounded"
+                    onClick={clearAnalyticsFilters}
+                    title="Clear analytics filters"
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2 text-xs rounded"
+                    onClick={() => setShowOverviewCards(prev => !prev)}
+                    aria-expanded={showOverviewCards}
+                    aria-controls="overview-summary-cards"
+                  >
+                    {showOverviewCards ? (
+                      <div className="flex items-center gap-1"><ChevronUp className="w-3 h-3" /><span>Hide</span></div>
+                    ) : (
+                      <div className="flex items-center gap-1"><ChevronDown className="w-3 h-3" /><span>Show</span></div>
+                    )}
+                  </Button>
+                </div>
                 <AnalyticsFilters
                   selectedDepartment={selectedDepartment}
                   selectedRiskLevel={selectedRiskLevel}
@@ -3399,41 +3753,6 @@ export function AttendanceAnalytics({
               {/* Summary header with collapse toggle */}
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-gray-800">Summary</h4>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={hasPendingChanges ? 'default' : 'outline'}
-                  size="sm"
-                  className="h-8 px-3 text-xs rounded"
-                  onClick={handleApplyFilters}
-                  disabled={!hasPendingChanges}
-                  title={hasPendingChanges ? 'Apply current filters' : 'No changes to apply'}
-                >
-                  Apply filters
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-2 text-xs rounded"
-                  onClick={clearAnalyticsFilters}
-                  title="Clear analytics filters"
-                >
-                  Clear
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-2 text-xs rounded"
-                  onClick={() => setShowOverviewCards(prev => !prev)}
-                  aria-expanded={showOverviewCards}
-                  aria-controls="overview-summary-cards"
-                >
-                  {showOverviewCards ? (
-                    <div className="flex items-center gap-1"><ChevronUp className="w-3 h-3" /><span>Hide</span></div>
-                  ) : (
-                    <div className="flex items-center gap-1"><ChevronDown className="w-3 h-3" /><span>Show</span></div>
-                  )}
-                </Button>
-              </div>
             </div>
 
               {/* Compact Stats Cards */}
@@ -3624,13 +3943,21 @@ export function AttendanceAnalytics({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <FullscreenAttendanceDistributionModal
-                            totalPresent={analyticsData ? analyticsData.attendedClasses : (chartData.timeBasedData || []).reduce((s: number, d: any) => s + (d.presentCount || 0), 0)}
-                            totalLate={analyticsData ? analyticsData.lateClasses : (chartData.timeBasedData || []).reduce((s: number, d: any) => s + (d.lateCount || 0), 0)}
-                            totalAbsent={analyticsData ? analyticsData.absentClasses : (chartData.timeBasedData || []).reduce((s: number, d: any) => s + (d.absentCount || 0), 0)}
+                            totalPresent={chartData.summary?.presentCount || 0}
+                            totalLate={chartData.summary?.lateCount || 0}
+                            totalAbsent={chartData.summary?.absentCount || 0}
                             type={type}
                             onExport={handleExport}
                             showSecondaryFilters={false}
                             loading={loading}
+                            appliedFilters={{
+                              department: appliedSelectedDepartment,
+                              course: appliedSelectedCourse,
+                              section: appliedSelectedSection,
+                              yearLevel: appliedSelectedYearLevel,
+                              subject: appliedInternalSelectedSubject,
+                              timeRange: appliedTimeRange
+                            }}
                             trigger={
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-gray-100 rounded-xl">
                                 <Maximize2 className="w-4 h-4 text-gray-400" />
@@ -3648,7 +3975,7 @@ export function AttendanceAnalytics({
                   {/* Donut Chart */}
                   {isBusy ? (
                     <div className="flex items-center justify-center mb-6"><AnalyticsLoadingSpinner /></div>
-                  ) : (chartData.timeBasedData && chartData.timeBasedData.length > 0 ? (
+                  ) : (chartData.summary ? (
                   <div className="flex items-center justify-center mb-6">
                     <div className="relative w-56 h-56">
                       <ResponsiveContainer width="100%" height="100%">
@@ -3657,17 +3984,17 @@ export function AttendanceAnalytics({
                             data={[
                               { 
                                 name: 'Present', 
-                                value: chartData.timeBasedData.reduce((sum: number, item: any) => sum + (item.presentCount || 0), 0), 
+                                value: chartData.summary.presentCount || 0, 
                                 color: '#1e40af' // Dark blue
                               },
                               { 
                                 name: 'Late', 
-                                value: chartData.timeBasedData.reduce((sum: number, item: any) => sum + (item.lateCount || 0), 0), 
+                                value: chartData.summary.lateCount || 0, 
                                 color: '#0ea5e9' // Light blue/cyan
                               },
                               { 
                                 name: 'Absent', 
-                                value: chartData.timeBasedData.reduce((sum: number, item: any) => sum + (item.absentCount || 0), 0), 
+                                value: chartData.summary.absentCount || 0, 
                                 color: '#9ca3af' // Light gray
                               }
                             ]}
@@ -4239,7 +4566,21 @@ export function AttendanceAnalytics({
                           stroke="#22c55e" 
                           strokeWidth={3}
                           dot={false}
-                          name="Moving Avg"
+                          name="Moving Average"
+                        />
+                        <Legend 
+                          verticalAlign="top" 
+                          height={50}
+                          iconType="line"
+                          wrapperStyle={{ paddingBottom: '10px' }}
+                          formatter={(value, entry) => {
+                            if (value === 'Attendance Rate') {
+                              return 'Daily Attendance Rate';
+                            } else if (value === 'Moving Average') {
+                              return '7-Day Moving Average';
+                            }
+                            return value;
+                          }}
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -4320,30 +4661,30 @@ export function AttendanceAnalytics({
                             return label;
                           }}
                           formatter={(value: any, name: any, props: any) => {
-                            const streakType = props?.payload?.streakType;
-                            const isBreak = props?.payload?.isStreakBreak;
-                            const attendanceRate = props?.payload?.attendanceRate;
-                            const streakLabel = streakType === 'good' ? 'Good Streak' : 'Poor Streak';
-                            const breakLabel = isBreak ? ' (Streak Break)' : '';
+                            const month = props?.payload?.month;
+                            const totalStudents = props?.payload?.totalStudents;
+                            const averageStreak = props?.payload?.averageStreak;
+                            const monthName = month === 8 ? 'August' : month === 9 ? 'September' : `Month ${month}`;
                             return [
-                              `${Math.abs(value)} days${breakLabel}`,
-                              streakLabel,
-                              `Attendance: ${attendanceRate}%`
+                              `${value.toLocaleString()} ${name}`,
+                              `${monthName} - ${totalStudents?.toLocaleString()} students`,
+                              `Average: ${averageStreak?.toFixed(1)}%`
                             ];
                           }}
                         />
+                        <Legend />
                         <Bar 
-                          dataKey="currentStreak" 
-                          fill="#6b7280"
+                          dataKey="goodStreaks" 
+                          fill="#10b981"
                           radius={[2, 2, 0, 0]}
-                        >
-                          {generateStreakAnalysisData.data.map((entry: any, index: number) => (
-                            <Cell 
-                              key={`cell-${index}`}
-                              fill={entry.currentStreak > 0 ? '#22c55e' : entry.currentStreak < 0 ? '#ef4444' : '#6b7280'}
-                            />
-                          ))}
-                        </Bar>
+                          name="Good Streaks"
+                        />
+                        <Bar 
+                          dataKey="poorStreaks" 
+                          fill="#ef4444"
+                          radius={[2, 2, 0, 0]}
+                          name="Poor Streaks"
+                        />
                       </BarChart>
                     </ResponsiveContainer>
                     ))}

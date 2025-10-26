@@ -137,6 +137,23 @@ export function AnalyticsFilters({
   const isCourseSelected = selectedCourse !== 'all' && isDepartmentSelected;
   const isYearLevelSelected = selectedYearLevel !== 'all' && isCourseSelected;
   const isSectionSelected = selectedSection !== 'all' && isYearLevelSelected;
+
+  // Debug logging to help identify the sections filter issue
+  console.log('🔍 Sections Filter Debug:', {
+    selectedCourse,
+    selectedYearLevel,
+    selectedYearLevelNumber,
+    allSectionsCount: allSections.length,
+    filteredSectionsCount: filteredSections.length,
+    isYearLevelSelected,
+    sectionsDisabled: !isYearLevelSelected || (filteredSections || []).length === 0,
+    sampleSections: allSections.slice(0, 3).map(s => ({
+      id: s.id,
+      name: s.name,
+      courseId: s.courseId,
+      yearLevel: s.yearLevel
+    }))
+  });
   
   // Auto-open Section dropdown when it becomes enabled and there are sections
   useEffect(() => {

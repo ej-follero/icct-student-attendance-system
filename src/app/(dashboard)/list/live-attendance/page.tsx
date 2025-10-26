@@ -705,7 +705,7 @@ export default function LiveAttendanceFeed() {
         <div className="relative">
           <PageHeader
             title="Live Attendance Feed"
-            subtitle={`Real-time attendance monitoring for today (${new Date().toLocaleDateString()}) - Live updates as students scan their RFID cards`}
+            subtitle={`Real-time attendance monitoring for today (${new Date().toLocaleDateString()})`}
             breadcrumbs={[
               { label: 'Home', href: '/' },
               { label: 'Attendance Management', href: '/attendance' },
