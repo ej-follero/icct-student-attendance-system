@@ -37,6 +37,7 @@ import { ViewDialog } from '@/components/reusable/Dialogs/ViewDialog';
 import { QuickActionsPanel } from '@/components/reusable/QuickActionsPanel';
 import { SummaryCardSkeleton, PageSkeleton } from '@/components/reusable/Skeleton';
 import { VisibleColumnsDialog, ColumnOption } from '@/components/reusable/Dialogs/VisibleColumnsDialog';
+import { FilterChips } from '@/components/FilterChips';
 import { z } from "zod";
 import CalendarView from "@/components/CalendarView";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -910,6 +911,59 @@ export default function RoomsPage() {
 
   const selectedRooms = rooms.filter(room => selectedIds.includes(String(room.id)));
 
+  // Helper function to format filter values for display
+  const formatFilterDisplay = (key: string, value: string): string => {
+    switch (key) {
+      case 'status':
+        const statusMap: Record<string, string> = {
+          'AVAILABLE': 'Available',
+          'OCCUPIED': 'Occupied',
+          'MAINTENANCE': 'Maintenance',
+          'RESERVED': 'Reserved',
+          'INACTIVE': 'Inactive'
+        };
+        return statusMap[value] || value;
+      case 'type':
+        const typeMap: Record<string, string> = {
+          'LECTURE': 'Lecture',
+          'LABORATORY': 'Laboratory',
+          'CONFERENCE': 'Conference',
+          'OFFICE': 'Office',
+          'OTHER': 'Other'
+        };
+        return typeMap[value] || value;
+      case 'building':
+        return value.replace(/([A-Z])/g, ' $1').trim() || value;
+      case 'floor':
+        return value.replace('F', '') + 'F' || value;
+      case 'occupancy':
+        return value.charAt(0).toUpperCase() + value.slice(1);
+      default:
+        return value;
+    }
+  };
+
+  // Convert filters to FilterChips format
+  const filtersForChips = useMemo(() => {
+    const filters: Record<string, string[]> = {
+      status: statusFilter !== 'all' ? [statusFilter] : [],
+      type: typeFilter !== 'all' ? [typeFilter] : [],
+      building: buildingFilter !== 'all' ? [buildingFilter] : [],
+      floor: floorFilter !== 'all' ? [floorFilter] : [],
+      occupancy: occupancyFilter !== 'all' ? [occupancyFilter] : [],
+    };
+    return filters;
+  }, [statusFilter, typeFilter, buildingFilter, floorFilter, occupancyFilter]);
+
+  // Clear all filters
+  const handleClearFilters = () => {
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setBuildingFilter('all');
+    setFloorFilter('all');
+    setOccupancyFilter('all');
+    setSearchInput('');
+  };
 
   // Handler for bulk assignment
   const handleBulkAssignment = async () => {
@@ -1175,6 +1229,67 @@ export default function RoomsPage() {
                 </Select>
               </div>
             </div>
+
+            {/* Active Filter Chips */}
+            {(Object.values(filtersForChips).some(arr => arr.length > 0) || searchInput.trim()) && (
+              <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                <FilterChips
+                  filters={filtersForChips}
+                  fields={[
+                    { key: 'status', label: 'Status', allowIndividualRemoval: true },
+                    { key: 'type', label: 'Type', allowIndividualRemoval: true },
+                    { key: 'building', label: 'Building', allowIndividualRemoval: true },
+                    { key: 'floor', label: 'Floor', allowIndividualRemoval: true },
+                    { key: 'occupancy', label: 'Occupancy', allowIndividualRemoval: true }
+                  ]}
+                  onRemove={(key, value) => {
+                    if (value) {
+                      // Remove specific filter value
+                      switch (key) {
+                        case 'status':
+                          setStatusFilter('all');
+                          break;
+                        case 'type':
+                          setTypeFilter('all');
+                          break;
+                        case 'building':
+                          setBuildingFilter('all');
+                          break;
+                        case 'floor':
+                          setFloorFilter('all');
+                          break;
+                        case 'occupancy':
+                          setOccupancyFilter('all');
+                          break;
+                      }
+                    } else {
+                      // Remove all values for this filter
+                      switch (key) {
+                        case 'status':
+                          setStatusFilter('all');
+                          break;
+                        case 'type':
+                          setTypeFilter('all');
+                          break;
+                        case 'building':
+                          setBuildingFilter('all');
+                          break;
+                        case 'floor':
+                          setFloorFilter('all');
+                          break;
+                        case 'occupancy':
+                          setOccupancyFilter('all');
+                          break;
+                      }
+                    }
+                  }}
+                  onClearAll={handleClearFilters}
+                  searchQuery={searchInput}
+                  onRemoveSearch={() => setSearchInput('')}
+                  showSearchChip={true}
+                />
+              </div>
+            )}
           </div>
           {/* Bulk Actions Bar */}
           {selectedIds.length > 0 && (

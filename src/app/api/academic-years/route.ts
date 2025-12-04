@@ -1,6 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+const deriveActiveSemesters = (semesters: any[]) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let activeIndex = -1;
+  let earliestStart: Date | null = null;
+  let latestEnd: Date | null = null;
+
+  const normalized = semesters.map((semester: any, index: number) => {
+    const start = new Date(semester.startDate);
+    const end = new Date(semester.endDate);
+    const isCurrent =
+      !Number.isNaN(start.getTime()) &&
+      !Number.isNaN(end.getTime()) &&
+      start.getTime() <= today.getTime() &&
+      end.getTime() >= today.getTime();
+
+    if (isCurrent && activeIndex === -1) {
+      activeIndex = index;
+    }
+
+    if (!Number.isNaN(start.getTime())) {
+      if (!earliestStart || start < earliestStart) {
+        earliestStart = start;
+      }
+    }
+    if (!Number.isNaN(end.getTime())) {
+      if (!latestEnd || end > latestEnd) {
+        latestEnd = end;
+      }
+    }
+
+    return {
+      ...semester,
+      isActive: false
+    };
+  });
+
+  if (activeIndex >= 0) {
+    normalized[activeIndex] = { ...normalized[activeIndex], isActive: true };
+  }
+
+  let withinRange = false;
+
+  if (earliestStart && latestEnd) {
+    const earliest = earliestStart as unknown as Date;
+    const latest = latestEnd as unknown as Date;
+
+    withinRange =
+      earliest.getTime() <= today.getTime() &&
+      latest.getTime() >= today.getTime();
+  }
+
+  return {
+    semesters: normalized,
+    hasCurrent: activeIndex !== -1,
+    withinRange
+  };
+};
+
 export async function GET(request: NextRequest) {
   try {
     // Authorization: allow ADMIN, DEPARTMENT_HEAD, INSTRUCTOR
@@ -150,9 +210,22 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    let sanitizedSemesters = semesters.map((semester: any) => ({
+      ...semester,
+      semesterType: semester.semesterType,
+      startDate: semester.startDate,
+      endDate: semester.endDate,
+      registrationStart: semester.registrationStart,
+      registrationEnd: semester.registrationEnd,
+      enrollmentStart: semester.enrollmentStart,
+      enrollmentEnd: semester.enrollmentEnd,
+      notes: semester.notes,
+      isActive: false
+    }));
+
     // Validate semesters data
     const semesterTypes = new Set();
-    for (const semester of semesters) {
+    for (const semester of sanitizedSemesters) {
       if (!semester.startDate || !semester.endDate || !semester.semesterType) {
         return NextResponse.json({ 
           error: 'Each semester must have startDate, endDate, and semesterType' 
@@ -177,7 +250,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for date overlaps with existing semesters
-    for (const semester of semesters) {
+    for (const semester of sanitizedSemesters) {
       const start = new Date(semester.startDate);
       const end = new Date(semester.endDate);
 
@@ -214,9 +287,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const {
+      semesters: semestersWithActive,
+      hasCurrent,
+      withinRange
+    } = deriveActiveSemesters(sanitizedSemesters);
+    sanitizedSemesters = semestersWithActive;
+    const yearIsActive = hasCurrent || withinRange;
+
     // Create all semesters for the academic year
     const createdSemesters = [];
-    for (const semesterData of semesters) {
+    for (const semesterData of sanitizedSemesters) {
       const semester = await prisma.semester.create({
         data: {
           startDate: new Date(semesterData.startDate),
@@ -224,7 +305,7 @@ export async function POST(request: NextRequest) {
           year: academicYear,
           semesterType: semesterData.semesterType,
           status: 'UPCOMING',
-          isActive: false,
+          isActive: semesterData.isActive,
           registrationStart: semesterData.registrationStart ? new Date(semesterData.registrationStart) : null,
           registrationEnd: semesterData.registrationEnd ? new Date(semesterData.registrationEnd) : null,
           enrollmentStart: semesterData.enrollmentStart ? new Date(semesterData.enrollmentStart) : null,
@@ -235,13 +316,26 @@ export async function POST(request: NextRequest) {
       createdSemesters.push(semester);
     }
 
+    if (yearIsActive) {
+      await prisma.semester.updateMany({
+        where: {
+          year: {
+            not: academicYear
+          }
+        },
+        data: {
+          isActive: false
+        }
+      });
+    }
+
     // Return the created academic year structure
     const academicYearData = {
       id: academicYear,
       name: `${academicYear}-${academicYear + 1}`,
       startDate: createdSemesters[0].startDate,
       endDate: createdSemesters[createdSemesters.length - 1].endDate,
-      isActive: false,
+      isActive: yearIsActive,
       semesters: createdSemesters.map(sem => ({
         id: sem.semesterId,
         name: getSemesterName(sem.semesterType),

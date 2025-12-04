@@ -252,8 +252,46 @@ export async function POST(req: NextRequest) {
 
       // Academic Attendance Records Table
       if (includeFlags?.includeTable && Array.isArray(tableView) && tableView.length > 0) {
+        // Check if this is a student-attendance type (single student records)
+        const isStudentAttendance = reportType === 'student-attendance' || reportType === 'student_attendance';
+        
+        // Add student info header for student-attendance type
+        let studentInfoStartY = 35;
+        if (isStudentAttendance && tableView.length > 0) {
+          const firstRecord = tableView[0];
+          const studentName = firstRecord.studentName || 'N/A';
+          const studentId = firstRecord.studentId || 'N/A';
+          const department = firstRecord.department || 'N/A';
+          
+          studentInfoStartY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 15 : 35;
+          
+          // Student Information Section
+          doc.setFontSize(12);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(25, 25, 112);
+          doc.text('STUDENT INFORMATION', 14, studentInfoStartY);
+          
+          doc.setDrawColor(25, 25, 112);
+          doc.setLineWidth(0.5);
+          doc.line(14, studentInfoStartY + 2, 100, studentInfoStartY + 2);
+          
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          doc.text(`Name: ${studentName}`, 14, studentInfoStartY + 8);
+          doc.text(`Student ID: ${studentId}`, 14, studentInfoStartY + 14);
+          doc.text(`Department: ${department}`, 14, studentInfoStartY + 20);
+          
+          // Attendance Summary if available
+          if (analytics?.summary) {
+            const s = analytics.summary;
+            doc.text(`Attendance Rate: ${(s.attendanceRate ?? 0).toFixed(1)}%`, 150, studentInfoStartY + 8);
+            doc.text(`Present: ${s.presentCount ?? 0} | Late: ${s.lateCount ?? 0} | Absent: ${s.absentCount ?? 0}`, 150, studentInfoStartY + 14);
+          }
+        }
+        
         // Calculate starting position for table
-        const startY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 15 : 25;
+        const tableStartY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + (isStudentAttendance ? 10 : 15) : (isStudentAttendance ? 60 : 25);
         
         // Use selected columns if provided, otherwise use all columns
         let tvCols: string[];
@@ -263,18 +301,24 @@ export async function POST(req: NextRequest) {
           tvCols = Object.keys(tableView[0] || {});
         }
         
+        // Format column headers
         const formattedCols = tvCols.map(col => {
-          // Create more compact, readable headers
           const formatted = col.replace(/([A-Z])/g, ' $1')
                              .replace(/^./, str => str.toUpperCase())
                              .trim();
           
-          // Make headers more compact for better fit
+          // Compact headers for better fit
           const compactHeaders: { [key: string]: string } = {
+            'Id': 'ID',
             'Student Name': 'STUDENT NAME',
             'Student Id': 'STUDENT ID',
+            'Date': 'DATE',
             'Time In': 'TIME IN',
             'Time Out': 'TIME OUT',
+            'Status': 'STATUS',
+            'Subject': 'SUBJECT',
+            'Room': 'ROOM',
+            'Notes': 'NOTES',
             'Is Manual Entry': 'MANUAL',
             'Created At': 'CREATED',
             'Updated At': 'UPDATED'
@@ -283,115 +327,164 @@ export async function POST(req: NextRequest) {
           return compactHeaders[formatted] || formatted.toUpperCase();
         });
         
+        // Format data rows with better date/time formatting
+        const formattedBody = tableView.map((r: any) => {
+          return tvCols.map(c => {
+            const value = r[c];
+            if (value === null || value === undefined) return '';
+            
+            // Format dates
+            if (c.toLowerCase().includes('date') && value) {
+              try {
+                const date = new Date(value);
+                if (!isNaN(date.getTime())) {
+                  return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+                }
+              } catch {}
+            }
+            
+            // Format times
+            if ((c.toLowerCase().includes('time') || c.toLowerCase().includes('created') || c.toLowerCase().includes('updated')) && value) {
+              try {
+                const date = new Date(value);
+                if (!isNaN(date.getTime())) {
+                  if (c.toLowerCase().includes('timein') || c.toLowerCase().includes('timeout')) {
+                    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                  } else {
+                    return date.toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+                  }
+                }
+              } catch {}
+            }
+            
+            // Format boolean
+            if (typeof value === 'boolean') {
+              return value ? 'Yes' : 'No';
+            }
+            
+            return String(value);
+          });
+        });
+        
+        // Build column styles dynamically - optimized for landscape page (297mm width)
+        // Available width: 297mm - 28mm (margins) = 269mm
+        const columnStyles: any = {};
+        const totalAvailableWidth = 269; // mm
+        let totalAllocatedWidth = 0;
+        
+        tvCols.forEach((col, idx) => {
+          const colLower = col.toLowerCase();
+          let style: any = {
+            fontSize: 8,
+            cellPadding: 2
+          };
+          
+          if (colLower.includes('id') && !colLower.includes('student')) {
+            style.cellWidth = 12;
+            style.halign = 'center';
+            totalAllocatedWidth += 12;
+          } else if (colLower.includes('studentname')) {
+            style.cellWidth = 30;
+            style.halign = 'left';
+            totalAllocatedWidth += 30;
+          } else if (colLower.includes('studentid')) {
+            style.cellWidth = 20;
+            style.halign = 'center';
+            totalAllocatedWidth += 20;
+          } else if (colLower.includes('department')) {
+            style.cellWidth = 35;
+            style.halign = 'left';
+            totalAllocatedWidth += 35;
+          } else if (colLower.includes('date')) {
+            style.cellWidth = 18;
+            style.halign = 'center';
+            totalAllocatedWidth += 18;
+          } else if (colLower.includes('timein')) {
+            style.cellWidth = 15;
+            style.halign = 'center';
+            totalAllocatedWidth += 15;
+          } else if (colLower.includes('timeout')) {
+            style.cellWidth = 15;
+            style.halign = 'center';
+            totalAllocatedWidth += 15;
+          } else if (colLower.includes('status')) {
+            style.cellWidth = 18;
+            style.halign = 'center';
+            totalAllocatedWidth += 18;
+          } else if (colLower.includes('subject')) {
+            style.cellWidth = 40;
+            style.halign = 'left';
+            totalAllocatedWidth += 40;
+          } else if (colLower.includes('room')) {
+            style.cellWidth = 12;
+            style.halign = 'center';
+            totalAllocatedWidth += 12;
+          } else if (colLower.includes('notes')) {
+            style.cellWidth = 25;
+            style.halign = 'left';
+            totalAllocatedWidth += 25;
+          } else if (colLower.includes('manual')) {
+            style.cellWidth = 12;
+            style.halign = 'center';
+            totalAllocatedWidth += 12;
+          } else if (colLower.includes('created') || colLower.includes('updated')) {
+            style.cellWidth = 28;
+            style.halign = 'center';
+            totalAllocatedWidth += 28;
+          } else {
+            // Auto-calculate remaining width
+            const remainingWidth = totalAvailableWidth - totalAllocatedWidth;
+            style.cellWidth = Math.max(15, remainingWidth / (tvCols.length - idx));
+            style.halign = 'left';
+            totalAllocatedWidth += style.cellWidth;
+          }
+          
+          columnStyles[idx] = style;
+        });
+        
+        // If total width exceeds available, scale down proportionally
+        if (totalAllocatedWidth > totalAvailableWidth) {
+          const scaleFactor = totalAvailableWidth / totalAllocatedWidth;
+          Object.keys(columnStyles).forEach(key => {
+            if (typeof columnStyles[key].cellWidth === 'number') {
+              columnStyles[key].cellWidth = columnStyles[key].cellWidth * scaleFactor;
+            }
+          });
+        }
+        
         autoTable(doc, {
           head: [formattedCols],
-          body: tableView.map((r: any) => tvCols.map(c => String(r[c] ?? ''))),
-          startY: startY + 8,
+          body: formattedBody,
+          startY: tableStartY + 8,
           styles: { 
-            fontSize: 8,
-            cellPadding: 2,
+            fontSize: 7,
+            cellPadding: 1.5,
             overflow: 'linebreak',
             lineWidth: 0.1,
-            halign: 'left'
+            halign: 'left',
+            lineColor: [200, 200, 200],
+            valign: 'middle'
           },
           headStyles: {
             fillColor: [25, 25, 112],
             textColor: [255, 255, 255],
             fontStyle: 'bold',
-            fontSize: 8,
-            cellPadding: 4,
-            minCellHeight: 12,
-            halign: 'center'
+            fontSize: 7,
+            cellPadding: 2,
+            minCellHeight: 8,
+            halign: 'center',
+            lineWidth: 0.1,
+            valign: 'middle'
           },
           alternateRowStyles: {
             fillColor: [248, 250, 252]
           },
           tableLineColor: [200, 200, 200],
           margin: { left: 14, right: 14, bottom: 30 },
-          columnStyles: {
-            // Optimized column styling with consistent font sizes and better widths
-            [tvCols.findIndex(col => col.toLowerCase().includes('studentname'))]: { 
-              cellWidth: 35,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('studentid'))]: { 
-              cellWidth: 20,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('department'))]: { 
-              cellWidth: 35,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('course'))]: { 
-              cellWidth: 35,
-              halign: 'left',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('yearlevel'))]: { 
-              cellWidth: 18,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('status'))]: { 
-              cellWidth: 20,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('attendancerate'))]: { 
-              cellWidth: 10,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('totalclasses'))]: { 
-              cellWidth: 10,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('present'))]: { 
-              cellWidth: 25,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('late'))]: { 
-              cellWidth: 20,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('absent'))]: { 
-              cellWidth: 20,
-              halign: 'center',
-              fontSize: 8
-            },
-            // Fallback for other columns
-            [tvCols.findIndex(col => col.toLowerCase().includes('date'))]: { 
-              cellWidth: 20,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('time'))]: { 
-              cellWidth: 16,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('subject'))]: { 
-              cellWidth: 25,
-              halign: 'left',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('room'))]: { 
-              cellWidth: 12,
-              halign: 'center',
-              fontSize: 8
-            },
-            [tvCols.findIndex(col => col.toLowerCase().includes('notes'))]: { 
-              cellWidth: 20,
-              halign: 'left',
-              fontSize: 8
-            }
-          }
+          columnStyles: columnStyles,
+          showHead: 'everyPage',
+          showFoot: 'never',
+          tableWidth: 'auto'
         });
       }
 
@@ -489,13 +582,47 @@ export async function POST(req: NextRequest) {
           if (key === modalContentKey) continue; // Skip modal content as it's handled above
           
           try {
-            if (y > 190) { doc.addPage(); y = 20; }
-            doc.setFontSize(10);
-            doc.text(String(key).replace(/([A-Z])/g, ' $1').trim(), 14, y);
-            y += 2;
-            doc.addImage(String(dataUrl), 'PNG', 14, y, 120, 60);
-            y += 64;
-          } catch {}
+            // Special handling for streak-analysis images - use larger size
+            const isStreakAnalysisImage = key === 'Streak Timeline Chart' || key === 'Period Breakdown';
+            
+            if (isStreakAnalysisImage) {
+              // Add new page for each streak-analysis image
+              doc.addPage();
+              y = 20;
+              
+              // Calculate optimal size for streak-analysis images
+              const pageWidth = doc.internal.pageSize.getWidth();
+              const pageHeight = doc.internal.pageSize.getHeight();
+              const margin = 20;
+              const availableWidth = pageWidth - (margin * 2);
+              const availableHeight = pageHeight - (margin * 2) - 20;
+              
+              // Use larger size for better readability
+              let imgWidth = availableWidth;
+              let imgHeight = availableHeight * 0.7; // Use 70% of available height
+              
+              // Add title
+              doc.setFontSize(12);
+              doc.setFont('helvetica', 'bold');
+              doc.text(String(key).replace(/([A-Z])/g, ' $1').trim(), margin, y);
+              y += 8;
+              
+              // Center the image
+              const x = (pageWidth - imgWidth) / 2;
+              doc.addImage(String(dataUrl), 'PNG', x, y, imgWidth, imgHeight);
+              y += imgHeight + 10;
+            } else {
+              // Standard handling for other charts
+              if (y > 190) { doc.addPage(); y = 20; }
+              doc.setFontSize(10);
+              doc.text(String(key).replace(/([A-Z])/g, ' $1').trim(), 14, y);
+              y += 2;
+              doc.addImage(String(dataUrl), 'PNG', 14, y, 120, 60);
+              y += 64;
+            }
+          } catch (error) {
+            console.warn(`Failed to add chart image ${key} to PDF:`, error);
+          }
         }
       }
 

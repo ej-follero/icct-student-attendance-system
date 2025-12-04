@@ -80,7 +80,7 @@ export function TableList<T extends object>({
       id: String(col.accessor),
       accessorKey: col.accessor,
       header: () => (
-        <div className={`flex items-center justify-center ${col.headerClassName || col.className || ''}`.trim()}>
+        <div className={`flex items-center ${col.headerClassName ?? 'justify-start'} ${col.className || ''}`.trim()}>
           {col.sortable && onSort ? (
             <button className="flex items-center gap-2" onClick={() => onSort(col.accessor as string)}>
               {col.header}
@@ -91,12 +91,14 @@ export function TableList<T extends object>({
               )}
             </button>
           ) : col.accessor === 'select' && onSelectAll ? (
-            <Checkbox
-              checked={isAllSelected}
-              indeterminate={isIndeterminate}
-              onCheckedChange={onSelectAll}
-              aria-label="Select all rows"
-            />
+            <div className={`flex ${col.headerClassName ?? 'justify-start'}`}>
+              <Checkbox
+                checked={isAllSelected}
+                indeterminate={isIndeterminate}
+                onCheckedChange={onSelectAll}
+                aria-label="Select all rows"
+              />
+            </div>
           ) : (
             col.header
           )}

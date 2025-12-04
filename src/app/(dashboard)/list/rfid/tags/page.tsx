@@ -122,6 +122,11 @@ interface RFIDTag {
   
 }
 
+type SearchableTag = RFIDTag & {
+  studentFullName: string;
+  studentFullNameReversed: string;
+};
+
 export default function RFIDTagsPage() {
   const [tags, setTags] = useState<RFIDTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -238,20 +243,45 @@ export default function RFIDTagsPage() {
 
 
   // Add Fuse.js setup with proper types
-  const fuse = useMemo(() => new Fuse<RFIDTag>(Array.isArray(tags) ? tags : [], {
-    keys: ["tagNumber", "student.firstName", "student.lastName"],
-    threshold: 0.4,
+  const searchableTags = useMemo<SearchableTag[]>(() => {
+    if (!Array.isArray(tags)) return [];
+    return tags.map(tag => {
+      const first = tag.student?.firstName ?? "";
+      const last = tag.student?.lastName ?? "";
+      const full = `${first} ${last}`.trim();
+      const reversed = `${last} ${first}`.trim();
+      return {
+        ...tag,
+        studentFullName: full.toLowerCase(),
+        studentFullNameReversed: reversed.toLowerCase(),
+      };
+    });
+  }, [tags]);
+
+  const fuse = useMemo(() => new Fuse<SearchableTag>(searchableTags, {
+    keys: [
+      { name: "tagNumber", weight: 0.4 },
+      { name: "studentFullName", weight: 0.4 },
+      { name: "studentFullNameReversed", weight: 0.3 },
+      { name: "student.firstName", weight: 0.2 },
+      { name: "student.lastName", weight: 0.2 },
+    ],
+    threshold: 0.2,
+    ignoreLocation: true,
+    distance: 40,
+    minMatchCharLength: 2,
     includeMatches: true,
-  }), [tags]);
+  }), [searchableTags]);
 
   const fuzzyResults = useMemo(() => {
-    const list = Array.isArray(tags) ? tags : [];
-    if (!searchInput) return list.map((t: RFIDTag, i: number) => ({ item: t, refIndex: i }));
-    return fuse.search(searchInput) as FuseResult<RFIDTag>[];
-  }, [searchInput, fuse, tags]);
+    const list = searchableTags;
+    const normalizedQuery = searchInput.trim().toLowerCase();
+    if (!normalizedQuery) return list.map((t: SearchableTag, i: number) => ({ item: t, refIndex: i }));
+    return fuse.search(normalizedQuery) as FuseResult<SearchableTag>[];
+  }, [searchInput, fuse, searchableTags]);
 
   const filteredTags = useMemo(() => {
-    let filtered = fuzzyResults.map((r: FuseResult<RFIDTag>) => r.item);
+    let filtered = fuzzyResults.map((r: FuseResult<SearchableTag>) => r.item);
 
     // Apply status filter
     if (statusFilter !== "all") {
@@ -656,7 +686,7 @@ export default function RFIDTagsPage() {
             className: 'text-center',
             sortable: col.sortable,
             render: (item: RFIDTag) => {
-              const fuseResult = fuzzyResults.find(r => r.item.tagId === item.tagId) as FuseResult<RFIDTag> | undefined;
+              const fuseResult = fuzzyResults.find(r => r.item.tagId === item.tagId) as FuseResult<SearchableTag> | undefined;
               const tagIdMatches = fuseResult?.matches?.find((m: { key: string }) => m.key === "tagNumber")?.indices;
               return (
                 <div 
@@ -674,8 +704,12 @@ export default function RFIDTagsPage() {
             className: 'text-center',
             sortable: col.sortable,
             render: (item: RFIDTag) => {
-              const fuseResult = fuzzyResults.find(r => r.item.tagId === item.tagId) as FuseResult<RFIDTag> | undefined;
-              const nameMatches = fuseResult?.matches?.find((m: { key: string }) => m.key === "student.firstName")?.indices;
+              const fuseResult = fuzzyResults.find(r => r.item.tagId === item.tagId) as FuseResult<SearchableTag> | undefined;
+              const nameMatches =
+                fuseResult?.matches?.find((m: { key: string }) => m.key === "studentFullName")?.indices ??
+                fuseResult?.matches?.find((m: { key: string }) => m.key === "studentFullNameReversed")?.indices ??
+                fuseResult?.matches?.find((m: { key: string }) => m.key === "student.firstName")?.indices ??
+                fuseResult?.matches?.find((m: { key: string }) => m.key === "student.lastName")?.indices;
               return (
                 <div className="text-center">
                   {item.student ? (
@@ -1325,7 +1359,7 @@ export default function RFIDTagsPage() {
             setSortFields([{ field: field as SortField, order }]);
           }}
           title="Sort Tags"
-          description="Sort tags by different fields. Choose the field and order to organize your list."
+          description="Sort tags by different fields."
           entityType="tags"
         />
 

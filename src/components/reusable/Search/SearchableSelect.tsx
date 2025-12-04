@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { BookOpen, Calendar } from 'lucide-react';
 
 interface Option {
   value: string;
@@ -74,7 +75,7 @@ const SearchableSelectSearch: React.FC<SearchableSelectProps> = ({
   // Set display value based on selected value
   useEffect(() => {
     if (value && selectedOption && selectedOption.value === value) {
-      // Show the selected option label
+      // Show the selected option label (without icon prefix since it's just text)
       setDisplayValue(selectedOption.label);
     } else {
       // Find and display the current value
@@ -195,17 +196,24 @@ const SearchableSelectSearch: React.FC<SearchableSelectProps> = ({
                 Searching…
               </div>
             ) : filteredOptions.length > 0 ? (
-              filteredOptions.map(opt => (
-                <div
-                  key={opt.value}
-                  className={`px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors ${
-                    opt.value === value ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                  }`}
-                  onClick={() => handleOptionClick(opt)}
-                >
-                  {opt.label}
-                </div>
-              ))
+              filteredOptions.map(opt => {
+                const isSchedule = opt.value.startsWith('schedule:');
+                const isEvent = opt.value.startsWith('event:');
+                const Icon = isSchedule ? BookOpen : isEvent ? Calendar : null;
+                
+                return (
+                  <div
+                    key={opt.value}
+                    className={`px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors flex items-center gap-2 ${
+                      opt.value === value ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
+                    }`}
+                    onClick={() => handleOptionClick(opt)}
+                  >
+                    {Icon && <Icon className="w-4 h-4 text-gray-500 flex-shrink-0" />}
+                    <span>{opt.label}</span>
+                  </div>
+                );
+              })
             ) : search.trim().length >= minChars ? (
               <div className="px-3 py-2 text-gray-500 text-sm">{noOptionsMessage}</div>
             ) : (

@@ -15,7 +15,8 @@ type ManualAttendancePayload = {
   entityType: "student" | "instructor";
   entityId: number;
   status: "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
-  subjectSchedId?: number | null; // This maps to eventId in the schema
+  subjectSchedId?: number | null; // Subject schedule ID
+  eventId?: number | null; // Event ID
   timestamp?: string;
   notes?: string;
   attendanceType?: "MANUAL_ENTRY";
@@ -132,11 +133,27 @@ export function ManualAttendanceDialog({
       setSubmitting(true);
       setError(null);
       
+      // Parse the selected value to determine if it's a schedule or event
+      let parsedSubjectSchedId: number | undefined = undefined;
+      let parsedEventId: number | undefined = undefined;
+      
+      if (subjectSchedId) {
+        if (subjectSchedId.startsWith('schedule:')) {
+          parsedSubjectSchedId = Number(subjectSchedId.replace('schedule:', ''));
+        } else if (subjectSchedId.startsWith('event:')) {
+          parsedEventId = Number(subjectSchedId.replace('event:', ''));
+        } else {
+          // Legacy format - assume it's a schedule ID
+          parsedSubjectSchedId = Number(subjectSchedId);
+        }
+      }
+      
       const payload: ManualAttendancePayload = {
         entityType,
         entityId: Number(entityId),
         status,
-        subjectSchedId: subjectSchedId ? Number(subjectSchedId) : undefined,
+        subjectSchedId: parsedSubjectSchedId,
+        eventId: parsedEventId,
         timestamp: timestamp ? new Date(timestamp).toISOString() : undefined,
         notes: notes || undefined,
         attendanceType: "MANUAL_ENTRY",
@@ -444,7 +461,7 @@ export function ManualAttendanceDialog({
                     }}
                   />
                 </div>
-                <div className="text-xs text-muted-foreground">Tip: Start typing to search. You can still paste a numeric ID.</div>
+                <div className="text-xs text-gray-600">Tip: Start typing to search. You can still paste a numeric ID.</div>
               </div>
 
               <div className="grid gap-2">
@@ -505,8 +522,8 @@ export function ManualAttendanceDialog({
                     }}
                   />
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  Tip: Links attendance to a specific class/event. For students, the dropdown shows their enrolled schedules; you can also search to narrow down.
+                <div className="text-xs text-gray-600">
+                  Tip: Links attendance to a specific class schedule or event. Search by subject code, event title, or location. Schedules show a book icon and events show a calendar icon.
                 </div>
               </div>
 

@@ -136,8 +136,22 @@ export async function GET(request: NextRequest) {
         take: 10,
         orderBy: { timestamp: 'desc' },
         include: {
-          reader: true,
-          user: true
+          reader: {
+            include: {
+              room: true,
+            },
+          },
+          user: {
+            include: {
+              Student: {
+                select: {
+                  firstName: true,
+                  middleName: true,
+                  lastName: true,
+                },
+              },
+            },
+          }
         }
       }),
       
@@ -183,17 +197,48 @@ export async function GET(request: NextRequest) {
     }));
 
     // Transform recent scans
-    const transformedRecentScans = recentScans.map((scan: any) => ({
+    const transformedRecentScans = recentScans.map((scan: any) => {
+      const studentRecord = Array.isArray(scan.user?.Student) && scan.user.Student.length > 0
+        ? scan.user.Student[0]
+        : null;
+      const firstName = studentRecord?.firstName || '';
+      const middleName = studentRecord?.middleName || '';
+      const lastName = studentRecord?.lastName || '';
+      const fullNameParts = [firstName, middleName, lastName]
+        .map(part => (part || '').trim())
+        .filter(Boolean);
+      const studentName = fullNameParts.length > 0
+        ? fullNameParts.join(' ')
+        : 'Unknown Student';
+
+      const normalizedStatus = typeof scan.scanStatus === 'string'
+        ? scan.scanStatus.toUpperCase()
+        : 'UNKNOWN';
+
+      const room = scan.reader?.room;
+      const roomLabel = room
+        ? [
+            room.roomNo,
+            room.roomBuildingLoc ? `(${room.roomBuildingLoc}${room.roomFloorLoc ? ` • Floor ${room.roomFloorLoc}` : ''})` : null,
+          ]
+            .filter(Boolean)
+            .join(' ')
+        : null;
+
+      return {
       id: scan.logsId,
       readerId: scan.readerId,
       readerName: scan.reader?.deviceName || 'Unknown Reader',
       tagId: scan.rfidTag,
       timestamp: scan.timestamp.toISOString(),
-      status: scan.scanStatus,
-      location: scan.location || 'Unknown',
-      studentName: scan.user ? `${scan.user.firstName} ${scan.user.lastName}` : 'Unknown Student',
+      status: normalizedStatus,
+      location: roomLabel || scan.location || 'Unknown',
+      roomLabel,
+      studentName,
+      studentIdentifier: scan.user?.userName || scan.user?.username || scan.user?.email || null,
       scanType: scan.scanType || 'attendance'
-    }));
+    };
+    });
 
     const dashboardData = {
       stats: {

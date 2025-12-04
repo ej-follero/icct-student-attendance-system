@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
       entityId,
       status,
       subjectSchedId,
+      eventId,
       timestamp,
       notes,
     } = body as {
@@ -19,6 +20,7 @@ export async function POST(req: NextRequest) {
       entityId: number;
       status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
       subjectSchedId?: number;
+      eventId?: number;
       timestamp?: string;
       notes?: string;
     };
@@ -42,7 +44,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Only student manual attendance is supported' }, { status: 410 });
     }
 
-    // Validate subject schedule if provided (maps to subjectSchedId in schema)
+    // Validate subject schedule if provided
     let validatedSubjectSchedId: number | null = null;
     if (subjectSchedId !== undefined && subjectSchedId !== null) {
       const schedule = await prisma.subjectSchedule.findUnique({
@@ -55,12 +57,31 @@ export async function POST(req: NextRequest) {
       validatedSubjectSchedId = schedule.subjectSchedId;
     }
 
+    // Validate event if provided
+    let validatedEventId: number | null = null;
+    if (eventId !== undefined && eventId !== null) {
+      const event = await prisma.event.findUnique({
+        where: { eventId: Number(eventId) },
+        select: { eventId: true, deletedAt: true }
+      });
+      if (!event || event.deletedAt !== null) {
+        return NextResponse.json({ error: 'Event not found or has been deleted' }, { status: 404 });
+      }
+      validatedEventId = event.eventId;
+    }
+
+    // Ensure only one of subjectSchedId or eventId is provided
+    if (validatedSubjectSchedId !== null && validatedEventId !== null) {
+      return NextResponse.json({ error: 'Cannot specify both subject schedule and event' }, { status: 400 });
+    }
+
     // Create attendance record according to schema
     const attendanceData = {
       userId: actualUserId,
       userRole: userRole,
       studentId: Number(entityId),
       subjectSchedId: validatedSubjectSchedId,
+      eventId: validatedEventId,
       status: status,
       attendanceType: 'MANUAL_ENTRY' as const,
       verification: 'PENDING' as const,

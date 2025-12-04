@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ export function EditScheduleDialog({ open, onOpenChange, schedule, onScheduleUpd
   const [sectionSearch, setSectionSearch] = useState("");
   const [instructorSearch, setInstructorSearch] = useState("");
   const [roomSearch, setRoomSearch] = useState("");
+  const instructorSearchInputRef = useRef<HTMLInputElement>(null);
 
   const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
   const scheduleTypes = ['REGULAR', 'MAKEUP', 'SPECIAL', 'LABORATORY'];
@@ -62,42 +63,165 @@ export function EditScheduleDialog({ open, onOpenChange, schedule, onScheduleUpd
     section.sectionName.toLowerCase().includes(sectionSearch.toLowerCase())
   );
 
-  const filteredInstructors = instructors.filter(instructor =>
-    instructor.firstName.toLowerCase().includes(instructorSearch.toLowerCase()) ||
-    instructor.lastName.toLowerCase().includes(instructorSearch.toLowerCase())
-  );
+  const filteredInstructors = useMemo(() => {
+    if (!instructorSearch.trim()) {
+      return instructors;
+    }
+    const searchLower = instructorSearch.toLowerCase().trim();
+    return instructors.filter(instructor => {
+      const firstName = (instructor.firstName || '').toLowerCase();
+      const lastName = (instructor.lastName || '').toLowerCase();
+      const middleName = (instructor.middleName || '').toLowerCase();
+      const fullName = `${firstName} ${middleName} ${lastName}`.replace(/\s+/g, ' ').trim();
+      const reverseFullName = `${lastName} ${middleName} ${firstName}`.replace(/\s+/g, ' ').trim();
+      const email = (instructor.email || '').toLowerCase();
+      const employeeId = (instructor.employeeId || '').toLowerCase();
+      
+      return firstName.includes(searchLower) ||
+             lastName.includes(searchLower) ||
+             middleName.includes(searchLower) ||
+             fullName.includes(searchLower) ||
+             reverseFullName.includes(searchLower) ||
+             email.includes(searchLower) ||
+             employeeId.includes(searchLower);
+    });
+  }, [instructors, instructorSearch]);
 
   const filteredRooms = rooms.filter(room =>
     room.roomNo.toLowerCase().includes(roomSearch.toLowerCase())
   );
 
+  // Load dropdown data when dialog opens
   useEffect(() => {
-    if (open && schedule) {
-      // Populate form with schedule data
-      setFormData({
-        subjectId: schedule.subject.subjectId.toString(),
-        sectionId: schedule.section.sectionId.toString(),
-        instructorId: schedule.instructor?.instructorId?.toString() || '',
-        roomId: schedule.room.roomId.toString(),
-        day: schedule.day,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime,
-        scheduleType: schedule.scheduleType,
-        status: schedule.status,
-        maxStudents: schedule.maxStudents.toString(),
-        semesterId: schedule.semester.semesterId.toString(),
-        academicYear: schedule.academicYear,
-        notes: schedule.notes || ''
-      });
-
-      // Load dropdown data
+    if (open) {
       loadSubjects();
       loadSections();
       loadInstructors();
       loadRooms();
       loadSemesters();
     }
-  }, [open, schedule]);
+  }, [open]);
+
+  // Populate form data when schedule changes and dropdowns are loaded
+  useEffect(() => {
+    if (open && schedule && subjects.length > 0 && sections.length > 0 && rooms.length > 0 && semesters.length > 0) {
+      // Helper function to convert time from "07:30 AM" to "07:30" format
+      const convertTimeFormat = (timeStr: string): string => {
+        if (!timeStr) return '';
+        // If already in 24-hour format (HH:MM), return as is
+        if (/^\d{2}:\d{2}$/.test(timeStr)) {
+          return timeStr;
+        }
+        // Convert from "07:30 AM" or "07:30 PM" format
+        const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (match) {
+          let hours = parseInt(match[1]);
+          const minutes = match[2];
+          const period = match[3].toUpperCase();
+          
+          if (period === 'PM' && hours !== 12) {
+            hours += 12;
+          } else if (period === 'AM' && hours === 12) {
+            hours = 0;
+          }
+          
+          return `${hours.toString().padStart(2, '0')}:${minutes}`;
+        }
+        return timeStr;
+      };
+
+      // Normalize status: "Active" -> "ACTIVE", etc.
+      const normalizeStatus = (status: string): string => {
+        const statusMap: { [key: string]: string } = {
+          'Active': 'ACTIVE',
+          'Inactive': 'CANCELLED',
+          'Cancelled': 'CANCELLED',
+          'Postponed': 'POSTPONED',
+          'Completed': 'COMPLETED',
+          'Conflict': 'CONFLICT'
+        };
+        return statusMap[status] || status.toUpperCase();
+      };
+
+      // Normalize scheduleType: "Regular" -> "REGULAR", etc.
+      const normalizeScheduleType = (type: string): string => {
+        const typeMap: { [key: string]: string } = {
+          'Regular': 'REGULAR',
+          'Make-up': 'MAKEUP',
+          'Makeup': 'MAKEUP',
+          'Special': 'SPECIAL',
+          'Laboratory': 'LABORATORY',
+          'Lab': 'LABORATORY'
+        };
+        return typeMap[type] || type.toUpperCase();
+      };
+
+      // Get academic year from schedule or calculate from semester
+      let academicYear = schedule.academicYear || '';
+      if (!academicYear && schedule.semester) {
+        // Try to extract from semester if available
+        const semester = semesters.find(sem => sem.semesterId === schedule.semester.semesterId);
+        if (semester && semester.year) {
+          academicYear = `${semester.year}-${semester.year + 1}`;
+        }
+      }
+
+      // Ensure subjectId exists in subjects array
+      const scheduleSubjectId = schedule.subject.subjectId;
+      const subjectIdStr = scheduleSubjectId.toString();
+      const subjectExists = subjects.some(s => s.subjectId === scheduleSubjectId || s.subjectId.toString() === subjectIdStr);
+      
+      if (!subjectExists) {
+        console.warn('Subject not found in subjects array:', scheduleSubjectId, 'Available subjects:', subjects.map(s => s.subjectId));
+      }
+
+      // Ensure instructorId exists in instructors array (if instructor is assigned)
+      let instructorIdStr = '';
+      if (schedule.instructor?.instructorId) {
+        const scheduleInstructorId = schedule.instructor.instructorId;
+        instructorIdStr = scheduleInstructorId.toString();
+        const instructorExists = instructors.some(i => i.instructorId === scheduleInstructorId || i.instructorId.toString() === instructorIdStr);
+        
+        if (!instructorExists) {
+          console.warn('Instructor not found in instructors array:', scheduleInstructorId, 'Available instructors:', instructors.map(i => i.instructorId));
+        }
+      }
+
+      // Populate form with schedule data
+      setFormData({
+        subjectId: subjectIdStr,
+        sectionId: schedule.section.sectionId.toString(),
+        instructorId: instructorIdStr,
+        roomId: schedule.room.roomId.toString(),
+        day: schedule.day.toUpperCase(), // Ensure uppercase for day
+        startTime: convertTimeFormat(schedule.startTime),
+        endTime: convertTimeFormat(schedule.endTime),
+        scheduleType: normalizeScheduleType(schedule.scheduleType),
+        status: normalizeStatus(schedule.status),
+        maxStudents: schedule.maxStudents?.toString() || '',
+        semesterId: schedule.semester.semesterId.toString(),
+        academicYear: academicYear,
+        notes: schedule.notes || ''
+      });
+    } else if (open && !schedule) {
+      // Reset form when dialog opens without schedule
+      setFormData({
+        subjectId: '',
+        sectionId: '',
+        instructorId: '',
+        roomId: '',
+        day: '',
+        startTime: '',
+        endTime: '',
+        scheduleType: 'REGULAR',
+        status: 'ACTIVE',
+        maxStudents: '',
+        semesterId: '',
+        academicYear: '',
+        notes: ''
+      });
+    }
+  }, [open, schedule, subjects, sections, rooms, semesters]);
 
   const loadSubjects = async () => {
     try {
@@ -128,7 +252,8 @@ export function EditScheduleDialog({ open, onOpenChange, schedule, onScheduleUpd
       const response = await fetch('/api/instructors');
       if (response.ok) {
         const data = await response.json();
-        setInstructors(data.data || []);
+        // API returns array directly or wrapped in data property
+        setInstructors(Array.isArray(data) ? data : (data.data || []));
       }
     } catch (error) {
       console.error('Failed to load instructors:', error);
@@ -302,9 +427,20 @@ export function EditScheduleDialog({ open, onOpenChange, schedule, onScheduleUpd
                       <Label htmlFor="subjectId" className="text-sm text-blue-900">
                         Subject <span className="text-red-500">*</span>
                       </Label>
-                      <Select value={formData.subjectId} onValueChange={(value) => handleInputChange('subjectId', value)}>
+                      <Select 
+                        value={formData.subjectId || undefined} 
+                        onValueChange={(value) => handleInputChange('subjectId', value)}
+                        key={`subject-select-${subjects.length}-${formData.subjectId}`}
+                      >
                         <SelectTrigger className="border-blue-200 focus:border-blue-400 focus:ring-blue-400 rounded">
-                          <SelectValue placeholder="Select subject" />
+                          <SelectValue placeholder="Select subject">
+                            {formData.subjectId && subjects.length > 0 ? (
+                              (() => {
+                                const selectedSubject = subjects.find(s => s.subjectId.toString() === formData.subjectId);
+                                return selectedSubject ? `${selectedSubject.subjectName} (${selectedSubject.subjectCode})` : 'Select subject';
+                              })()
+                            ) : 'Select subject'}
+                          </SelectValue>
                         </SelectTrigger>
                       <SelectContent className="max-h-80">
                         <div className="p-2 border-b">
@@ -346,7 +482,17 @@ export function EditScheduleDialog({ open, onOpenChange, schedule, onScheduleUpd
                             <div className="px-2 py-1 text-xs text-gray-500 text-center">
                               No subjects found for "{subjectSearch}"
                             </div>
-                          ) : null}
+                          ) : subjects.length > 0 ? (
+                            subjects.map((subject) => (
+                              <SelectItem key={subject.subjectId} value={subject.subjectId.toString()}>
+                                {subject.subjectName} ({subject.subjectCode})
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-2 py-1 text-xs text-gray-500 text-center">
+                              Loading subjects...
+                            </div>
+                          )}
                         </div>
                       </SelectContent>
                     </Select>
@@ -412,21 +558,50 @@ export function EditScheduleDialog({ open, onOpenChange, schedule, onScheduleUpd
                       <Label htmlFor="instructorId" className="text-sm text-blue-900">
                         Instructor
                       </Label>
-                      <Select value={formData.instructorId} onValueChange={(value) => handleInputChange('instructorId', value)}>
+                      <Select 
+                        value={formData.instructorId || undefined} 
+                        onValueChange={(value) => handleInputChange('instructorId', value)}
+                        key={`instructor-select-${instructors.length}-${formData.instructorId}`}
+                      >
                         <SelectTrigger className="border-blue-200 focus:border-blue-400 focus:ring-blue-400 rounded">
-                          <SelectValue placeholder="Select instructor" />
+                          <SelectValue placeholder="Select instructor">
+                            {formData.instructorId && instructors.length > 0 ? (
+                              (() => {
+                                const selectedInstructor = instructors.find(i => i.instructorId.toString() === formData.instructorId);
+                                return selectedInstructor ? `${selectedInstructor.firstName} ${selectedInstructor.lastName}` : 'Select instructor';
+                              })()
+                            ) : 'Select instructor'}
+                          </SelectValue>
                         </SelectTrigger>
                       <SelectContent className="max-h-80">
                         <div className="p-2 border-b">
                           <div className="relative">
-                            <Search className="absolute left-2 top-2.5 h-3 w-3 text-gray-400" />
+                            <Search className="absolute left-2 top-2.5 h-3 w-3 text-gray-400 pointer-events-none" />
                             <input
+                              ref={instructorSearchInputRef}
                               type="text"
                               placeholder="Search instructors..."
                               value={instructorSearch}
                               onChange={(e) => setInstructorSearch(e.target.value)}
                               className="w-full pl-7 pr-8 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTimeout(() => {
+                                  instructorSearchInputRef.current?.focus();
+                                }, 0);
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                setTimeout(() => {
+                                  instructorSearchInputRef.current?.focus();
+                                }, 0);
+                              }}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                setTimeout(() => {
+                                  instructorSearchInputRef.current?.focus();
+                                }, 0);
+                              }}
                               onFocus={handleSafeFocus}
                               onBlur={handleSafeFocus}
                             />
@@ -456,7 +631,17 @@ export function EditScheduleDialog({ open, onOpenChange, schedule, onScheduleUpd
                             <div className="px-2 py-1 text-xs text-gray-500 text-center">
                               No instructors found for "{instructorSearch}"
                             </div>
-                          ) : null}
+                          ) : instructors.length > 0 ? (
+                            instructors.map((instructor) => (
+                              <SelectItem key={instructor.instructorId} value={instructor.instructorId.toString()}>
+                                {instructor.firstName} {instructor.lastName}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-2 py-1 text-xs text-gray-500 text-center">
+                              Loading instructors...
+                            </div>
+                          )}
                         </div>
                       </SelectContent>
                     </Select>

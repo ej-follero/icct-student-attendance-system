@@ -281,12 +281,16 @@ export async function DELETE(
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
     }
 
-    // Delete the schedule
-    await prisma.subjectSchedule.delete({
-      where: { subjectSchedId: scheduleId }
+    // Soft delete the schedule - update status to "CANCELLED" and set deletedAt timestamp
+    await prisma.subjectSchedule.update({
+      where: { subjectSchedId: scheduleId },
+      data: {
+        status: 'CANCELLED',
+        deletedAt: new Date()
+      }
     });
 
-    return NextResponse.json({ message: 'Schedule deleted successfully' });
+    return NextResponse.json({ message: 'Schedule soft deleted successfully (can be restored)' });
   } catch (error) {
     console.error('Error deleting schedule:', error);
     return NextResponse.json({ error: 'Failed to delete schedule' }, { status: 500 });

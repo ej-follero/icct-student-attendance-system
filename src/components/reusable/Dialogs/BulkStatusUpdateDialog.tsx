@@ -7,11 +7,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertCircle, Users, CheckCircle } from 'lucide-react';
+import { AlertCircle, Users, CheckCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface BulkStatusUpdateDialogProps {
@@ -62,37 +63,49 @@ export function BulkStatusUpdateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden">
-        {/* Blue Header Section */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 text-white">
+      <DialogContent className="sm:max-w-md p-0 overflow-hidden rounded-xl flex flex-col max-h-[90vh]">
+        {/* Accessibility - Hidden DialogTitle for screen readers */}
+        <VisuallyHidden>
+          <DialogTitle>Bulk Status Update</DialogTitle>
+        </VisuallyHidden>
+        
+        {/* Blue Header Section with Close Button */}
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 text-white rounded-t-xl relative flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-white/20 rounded flex items-center justify-center">
               <Users className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold">Bulk Status Update</h3>
+              <h3 className="text-lg font-semibold text-white">Bulk Status Update</h3>
               <p className="text-blue-100 text-sm">
                 Update the status of {selectedCount} selected {entityType}s
               </p>
             </div>
           </div>
+          {/* Close Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20 rounded-lg"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="w-4 h-4" />
+          </Button>
         </div>
 
         {/* Content Section */}
-        <div className="p-6">
-
-        <div className="space-y-4">
+        <div className="p-6 flex-1 overflow-y-auto">
+          <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="status">New Status</Label>
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger>
+              <SelectTrigger className = "rounded">
                 <SelectValue placeholder="Select status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ACTIVE">Active</SelectItem>
                 <SelectItem value="INACTIVE">Inactive</SelectItem>
-                <SelectItem value="SUSPENDED">Suspended</SelectItem>
-                <SelectItem value="GRADUATED">Graduated</SelectItem>
+                <SelectItem value="ARCHIVED">Archived</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -105,6 +118,7 @@ export function BulkStatusUpdateDialog({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
+              className="rounded"
             />
           </div>
 
@@ -115,21 +129,23 @@ export function BulkStatusUpdateDialog({
               <p>This action will update the status of all {selectedCount} selected {entityType}s. This action cannot be undone.</p>
             </div>
           </div>
+          </div>
         </div>
 
-        {/* Footer Section */}
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+        {/* Footer Section - Sticky */}
+        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0 rounded-b-xl">
           <Button
             variant="outline"
             onClick={handleCancel}
             disabled={isUpdating}
+            className = "rounded"
           >
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
             disabled={isUpdating || !status}
-            className="bg-blue-600 hover:bg-blue-700"
+            className="bg-blue-600 hover:bg-blue-700 rounded"
           >
             {isUpdating ? (
               <>
@@ -143,7 +159,6 @@ export function BulkStatusUpdateDialog({
               </>
             )}
           </Button>
-        </div>
         </div>
       </DialogContent>
     </Dialog>

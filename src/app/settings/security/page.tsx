@@ -262,7 +262,7 @@ export default function SecurityPage() {
                   Please contact your system administrator if you believe this is an error.
                 </p>
                 <div className="flex justify-center gap-4 mt-6">
-                  <Button onClick={() => router.push('/dashboard')}>
+                  <Button onClick={() => router.push('/dashboard/admin')}>
                     Return to Dashboard
                   </Button>
                   <Button variant="outline" onClick={() => router.push('/settings')}>

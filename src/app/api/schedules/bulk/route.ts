@@ -57,7 +57,8 @@ export async function PATCH(request: NextRequest) {
         message = `Successfully activated ${scheduleIds.length} schedule(s)`;
         break;
       case 'deactivate':
-        updateData = { status: 'CANCELLED' };
+        // Deactivate: Set status to CANCELLED but keep deletedAt as null (temporary deactivation, not deletion)
+        updateData = { status: 'CANCELLED', deletedAt: null };
         message = `Successfully deactivated ${scheduleIds.length} schedule(s)`;
         break;
       case 'bulkEdit':
@@ -71,8 +72,9 @@ export async function PATCH(request: NextRequest) {
         message = `Successfully updated ${scheduleIds.length} schedule(s)`;
         break;
       case 'archive':
-        updateData = { status: 'CANCELLED' };
-        message = `Successfully archived ${scheduleIds.length} schedule(s)`;
+        // Archive: Set status to CANCELLED but keep deletedAt as null (archived records are kept for reference)
+        updateData = { status: 'CANCELLED', deletedAt: null };
+        message = `Successfully archived ${scheduleIds.length} schedule(s) (can be restored)`;
         break;
       case 'bulkStatusChange':
         if (!data?.status) {
@@ -288,7 +290,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Soft delete schedules in bulk - update status to "CANCELLED"
+    // Soft delete schedules in bulk - update status to "CANCELLED" and set deletedAt timestamp
     const result = await prisma.subjectSchedule.updateMany({
       where: {
         subjectSchedId: {
@@ -296,13 +298,14 @@ export async function DELETE(request: NextRequest) {
         }
       },
       data: {
-        status: 'CANCELLED'
+        status: 'CANCELLED',
+        deletedAt: new Date()
       }
     });
 
     return NextResponse.json({
       success: true,
-      message: `Successfully deleted ${result.count} schedule(s)`,
+      message: `Successfully soft deleted ${result.count} schedule(s) (can be restored)`,
       count: result.count
     });
 

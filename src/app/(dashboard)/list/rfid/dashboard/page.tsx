@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import DataChart from "@/components/DataChart";
-import { FileText, CreditCard, Wifi, WifiOff, ScanLine, ArrowRight, Info, Settings, Plus, Upload, Printer, RefreshCw, Download, Search, Bell, Building2, RotateCcw, Eye, Pencil, BookOpen, GraduationCap, BadgeInfo, X, ChevronRight, ChevronDown, ChevronUp, Copy, Hash, Tag, Layers, Clock, UserCheck as UserCheckIcon, Archive, Loader2, Columns3, List, Filter } from "lucide-react";
+import { FileText, CreditCard, Wifi, WifiOff, ScanLine, ArrowRight, Info, Settings, Plus, Upload, Printer, RefreshCw, Download, Search, Bell, Building2, RotateCcw, Eye, Pencil, BookOpen, GraduationCap, BadgeInfo, X, ChevronRight, ChevronDown, ChevronUp, Copy, Hash, Tag, Layers, Clock, UserCheck as UserCheckIcon, Archive, Loader2, Columns3, List, Filter, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { useState, useMemo, useEffect, useCallback, Fragment } from "react";
 import { useRouter } from "next/navigation";
@@ -26,6 +26,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { ViewDialog } from '@/components/reusable/Dialogs/ViewDialog';
 import { TablePagination } from '@/components/reusable/Table/TablePagination';
 import { Label } from "@/components/ui/label";
+import { RFIDTagFormDialog } from "@/components/forms/RFIDTagFormDialog";
+import dynamic from 'next/dynamic';
+
+const RFIDReaderFormDialog = dynamic(() => import("@/components/forms/RFIDReaderFormDialog"), { ssr: false });
 
 import { rfidDashboardService, RFIDDashboardData, RFIDDashboardStats, RFIDScanLog, RFIDChartData } from "@/lib/services/rfid-dashboard.service";
 import { useRFIDRealTime } from "@/hooks/useRFIDRealTime";
@@ -66,20 +70,130 @@ const transformStats = (data: any) => {
 };
 
 const statusBadge = (status: string) => {
-  switch (status) {
+  const normalized = (status || '').toLowerCase();
+  switch (normalized) {
     case "success":
       return <Badge variant="default">Success</Badge>;
     case "error":
       return <Badge variant="destructive">Error</Badge>;
     case "unauthorized":
       return <Badge variant="destructive">Unauthorized</Badge>;
+    case "pending":
+      return <Badge variant="outline">Pending</Badge>;
     default:
       return <Badge variant="outline">Unknown</Badge>;
   }
 };
 
+const INVALID_STRINGS = new Set(["", "undefined", "null", "unknown", "n/a", "na", "none", "not available"]);
+
+const sanitizeString = (value: any): string | null => {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const lower = str.toLowerCase();
+  if (INVALID_STRINGS.has(lower)) return null;
+  const parts = str.split(/\s+/);
+  if (parts.length > 1 && parts.every((part) => INVALID_STRINGS.has(part.toLowerCase()))) {
+    return null;
+  }
+  return str;
+};
+
+const combineName = (...parts: Array<string | null | undefined>) => {
+  const validParts = parts
+    .map((part) => sanitizeString(part))
+    .filter(Boolean) as string[];
+  if (validParts.length === 0) return null;
+  return validParts.join(" ");
+};
+
 export default function RFIDDashboardPage() {
   const router = useRouter();
+  
+  const deriveTagDisplay = useCallback((log: any): string | null => {
+    const candidates = [
+      log.tagId,
+      log.tagNumber,
+      log.rfidTag,
+      log.tag?.tagNumber,
+      log.tag?.tagId,
+    ];
+    for (const candidate of candidates) {
+      const sanitized = sanitizeString(candidate);
+      if (sanitized) return sanitized;
+    }
+    return null;
+  }, []);
+
+  const deriveReaderDisplay = useCallback((log: any): string | null => {
+    const candidates = [
+      log.readerName,
+      log.reader?.deviceName,
+      log.reader?.name,
+      log.reader?.readerName,
+      sanitizeString(typeof log.readerId === 'number' ? `Reader ${log.readerId}` : log.readerId),
+    ];
+    for (const candidate of candidates) {
+      const sanitized = sanitizeString(candidate);
+      if (sanitized) return sanitized;
+    }
+    return null;
+  }, []);
+
+  const deriveStudentDisplay = useCallback((log: any): string | null => {
+    const nameFromPayload = sanitizeString(log.studentName);
+    if (nameFromPayload) return nameFromPayload;
+
+    const fallback = combineName(log.studentFirstName, log.studentMiddleName, log.studentLastName);
+    if (fallback) return fallback;
+
+    return null;
+  }, []);
+
+  const deriveStatusDisplay = useCallback((log: any): string => {
+    const status = sanitizeString(log.status) ?? sanitizeString(log.scanStatus);
+    return status ? status.toUpperCase() : 'UNKNOWN';
+  }, []);
+
+  const deriveScanTypeDisplay = useCallback((log: any): string => {
+    const scanType = sanitizeString(log.scanType) ?? 'attendance';
+    return scanType.toLowerCase();
+  }, []);
+
+  const deriveRoomNumberDisplay = useCallback((log: any): string | null => {
+    const directRoom = sanitizeString(log.reader?.room?.roomNo);
+    if (directRoom) return directRoom;
+
+    const fromLabel = sanitizeString(log.roomLabel);
+    if (fromLabel) {
+      const firstToken = fromLabel.split(/\s+/)[0];
+      const tokenSanitized = sanitizeString(firstToken);
+      if (tokenSanitized) return tokenSanitized;
+    }
+
+    return sanitizeString(log.location) ?? sanitizeString(log.readerName) ?? null;
+  }, []);
+
+  const deriveLocationDisplay = useCallback((log: any): string => {
+    const roomLabel =
+      sanitizeString(log.roomLabel) ??
+      combineName(
+        log.reader?.room?.roomNo,
+        log.reader?.room?.roomBuildingLoc
+          ? `(${log.reader?.room?.roomBuildingLoc}${
+              log.reader?.room?.roomFloorLoc ? ` • Floor ${log.reader?.room?.roomFloorLoc}` : ''
+            })`
+          : null
+      );
+
+    return (
+      roomLabel ??
+      sanitizeString(log.location) ??
+      sanitizeString(log.readerName) ??
+      'Unknown Location'
+    );
+  }, []);
   
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,6 +210,8 @@ export default function RFIDDashboardPage() {
   const [pageSize, setPageSize] = useState(10);
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
   const [showLogDetails, setShowLogDetails] = useState(false);
+  const [addTagDialogOpen, setAddTagDialogOpen] = useState(false);
+  const [addReaderDialogOpen, setAddReaderDialogOpen] = useState(false);
   
   // Print dialog states
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
@@ -157,54 +273,167 @@ export default function RFIDDashboardPage() {
   
   const recentLogs = useMemo(() => data?.recentScans || [], [data]);
 
+  const enrichedLogs = useMemo(() => {
+    return recentLogs.map((log: any) => {
+      const displayTag = deriveTagDisplay(log) ?? 'Unknown Tag';
+      const displayReader = deriveReaderDisplay(log) ?? 'Unknown Reader';
+      const displayStudent = deriveStudentDisplay(log) ?? 'Unknown Student';
+      const displayStatus = deriveStatusDisplay(log);
+      const displayScanType = deriveScanTypeDisplay(log);
+      const displayRoomNumber = deriveRoomNumberDisplay(log);
+      const displayLocation = deriveLocationDisplay(log);
+      const timestampValue = log.timestamp ? new Date(log.timestamp) : null;
+      const displayTimestamp = timestampValue && !Number.isNaN(timestampValue.getTime())
+        ? timestampValue.toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          })
+        : log.timestamp;
+      const readerFilterValue =
+        log.readerId !== null && log.readerId !== undefined
+          ? String(log.readerId)
+          : sanitizeString(log.readerIdentifier) ?? displayReader;
+      const tagFilterValue =
+        sanitizeString(log.tagId) ??
+        sanitizeString(log.tagIdentifier) ??
+        displayTag;
+
+      const studentIdentifier = sanitizeString(log.studentIdentifier);
+
+      const searchComposite = [
+        displayTag,
+        displayStudent,
+        displayReader,
+        displayRoomNumber,
+        displayLocation,
+        displayScanType,
+        String(log.readerId ?? ''),
+        studentIdentifier ?? '',
+      ]
+        .map((part) => (part ? part.toLowerCase() : ''))
+        .join(' ');
+
+      return {
+        ...log,
+        displayTag,
+        displayReader,
+        displayStudent,
+        displayStatus,
+        displayScanType,
+        displayRoomNumber,
+        displayLocation,
+        displayTimestamp,
+        readerFilterValue,
+        tagFilterValue,
+        studentIdentifier,
+        searchComposite,
+      };
+    });
+  }, [
+    recentLogs,
+    deriveTagDisplay,
+    deriveReaderDisplay,
+    deriveStudentDisplay,
+    deriveStatusDisplay,
+    deriveScanTypeDisplay,
+    deriveRoomNumberDisplay,
+    deriveLocationDisplay,
+  ]);
+
   // Get unique filter options from data
-  const statuses = useMemo(() => [...new Set(recentLogs.map((log: any) => log.status).filter(Boolean))], [recentLogs]);
-  const locations = useMemo(() => [...new Set(recentLogs.map((log: any) => log.location).filter(Boolean))], [recentLogs]);
-  const scanTypes = useMemo(() => [...new Set(recentLogs.map((log: any) => log.scanType).filter(Boolean))], [recentLogs]);
-  const readerIds = useMemo(() => [...new Set(recentLogs.map((log: any) => log.readerId).filter(Boolean))], [recentLogs]);
-  const tagIds = useMemo(() => [...new Set(recentLogs.map((log: any) => log.tagId).filter(Boolean))], [recentLogs]);
+  const statuses = useMemo(
+    () => [...new Set(enrichedLogs.map((log: any) => log.displayStatus).filter(Boolean))],
+    [enrichedLogs]
+  );
+  const roomNumbers = useMemo(
+    () =>
+      [
+        ...new Set(
+          enrichedLogs
+            .map((log: any) => log.displayRoomNumber || log.displayLocation)
+            .filter(Boolean)
+        ),
+      ],
+    [enrichedLogs]
+  );
+  const scanTypes = useMemo(
+    () => [...new Set(enrichedLogs.map((log: any) => log.displayScanType).filter(Boolean))],
+    [enrichedLogs]
+  );
+  const readerOptions = useMemo(() => {
+    const map = new Map<string, { value: string; label: string }>();
+    enrichedLogs.forEach((log: any) => {
+      const value = log.readerFilterValue;
+      const label = log.displayReader;
+      if (!value || !label) return;
+      if (!map.has(value)) {
+        map.set(value, { value, label });
+      }
+    });
+    return Array.from(map.values());
+  }, [enrichedLogs]);
+
+  const tagOptions = useMemo(() => {
+    const map = new Map<string, { value: string; label: string }>();
+    enrichedLogs.forEach((log: any) => {
+      const value = log.tagFilterValue;
+      const label = log.displayTag;
+      if (!value || !label) return;
+      if (!map.has(value)) {
+        map.set(value, { value, label });
+      }
+    });
+    return Array.from(map.values());
+  }, [enrichedLogs]);
 
   // Function to get count for each filter option
   const getFilterCount = useCallback((filterType: string, option: string): number => {
-    return recentLogs.filter((log: any) => {
+    return enrichedLogs.filter((log: any) => {
       switch (filterType) {
         case 'status':
-          return log.status === option;
+          return log.displayStatus === option;
         case 'location':
-          return log.location === option;
+          return (
+            log.displayRoomNumber === option ||
+            log.displayLocation === option
+          );
         case 'scanType':
-          return log.scanType === option;
+          return log.displayScanType === option;
         case 'readerId':
-          return log.readerId === option;
+          return log.readerFilterValue === option;
         case 'tagId':
-          return log.tagId === option;
+          return log.tagFilterValue === option;
         default:
           return false;
       }
     }).length;
-  }, [recentLogs]);
+  }, [enrichedLogs]);
 
   // Filter logs based on search and filters
   const filteredLogs = useMemo(() => {
-    let filtered = recentLogs.filter((log: any) => {
+    const query = debouncedSearch.toLowerCase();
+    return enrichedLogs.filter((log: any) => {
       const matchesSearch = 
-        (log.tagId?.toLowerCase().includes(debouncedSearch.toLowerCase()) || false) ||
-        (log.studentName?.toLowerCase().includes(debouncedSearch.toLowerCase()) || false) ||
-        (log.readerId?.toLowerCase().includes(debouncedSearch.toLowerCase()) || false) ||
-        (log.location?.toLowerCase().includes(debouncedSearch.toLowerCase()) || false);
-      
-      // Apply filters
-      const matchesStatus = filters.status.length === 0 || filters.status.includes(log.status);
-      const matchesLocation = filters.location.length === 0 || filters.location.includes(log.location);
-      const matchesScanType = filters.scanType.length === 0 || filters.scanType.includes(log.scanType);
-      const matchesReaderId = filters.readerId.length === 0 || filters.readerId.includes(log.readerId);
-      const matchesTagId = filters.tagId.length === 0 || filters.tagId.includes(log.tagId);
+        !query || log.searchComposite.includes(query);
+      const matchesStatus =
+        filters.status.length === 0 || filters.status.includes(log.displayStatus);
+      const matchesLocation =
+        filters.location.length === 0 ||
+        filters.location.includes(log.displayRoomNumber || log.displayLocation);
+      const matchesScanType =
+        filters.scanType.length === 0 || filters.scanType.includes(log.displayScanType);
+      const matchesReaderId =
+        filters.readerId.length === 0 || filters.readerId.includes(log.readerFilterValue);
+      const matchesTagId =
+        filters.tagId.length === 0 || filters.tagId.includes(log.tagFilterValue);
       
       return matchesSearch && matchesStatus && matchesLocation && matchesScanType && matchesReaderId && matchesTagId;
     });
-
-    return filtered;
-  }, [recentLogs, debouncedSearch, filters]);
+  }, [enrichedLogs, debouncedSearch, filters]);
 
   // Pagination
   const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredLogs.length / pageSize)), [filteredLogs.length, pageSize]);
@@ -246,17 +475,17 @@ export default function RFIDDashboardPage() {
   const handleExportSelected = () => {
     const rows = filteredLogs.filter((l: any) => selected.has(getRowId(l)));
     if (rows.length === 0) return;
-    const headers = ['Status','Tag ID','Student','Reader','Location','Type','Timestamp'];
+    const headers = ['Status','Tag ID','Student','Reader','Room Number','Type','Timestamp'];
     const csv = [
       headers.join(','),
       ...rows.map((r: any) => [
-        r.status,
-        r.tagId,
-        (r.studentName || 'Unknown').toString().replace(/,/g,' '),
-        r.readerId,
-        r.location,
-        (r.scanType || 'attendance'),
-        r.timestamp
+        r.displayStatus,
+        r.displayTag,
+        (r.displayStudent || 'Unknown').toString().replace(/,/g,' '),
+        r.displayReader,
+        r.displayRoomNumber || r.displayLocation,
+        (r.displayScanType || 'attendance'),
+        r.displayTimestamp || r.timestamp
       ].map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(','))
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -269,7 +498,10 @@ export default function RFIDDashboardPage() {
   };
 
   const handleCopySelectedTagIds = async () => {
-    const ids = filteredLogs.filter((l: any) => selected.has(getRowId(l))).map((l: any) => l.tagId).filter(Boolean);
+    const ids = filteredLogs
+      .filter((l: any) => selected.has(getRowId(l)))
+      .map((l: any) => l.displayTag)
+      .filter(Boolean);
     await navigator.clipboard.writeText(ids.join('\n'));
     toast.success('Tag IDs copied to clipboard');
   };
@@ -279,17 +511,17 @@ export default function RFIDDashboardPage() {
       toast.error('No records to export');
       return;
     }
-    const headers = ['Status','Tag ID','Student','Reader','Location','Type','Timestamp'];
+    const headers = ['Status','Tag ID','Student','Reader','Room Number','Type','Timestamp'];
     const csv = [
       headers.join(','),
       ...filteredLogs.map((r: any) => [
-        r.status,
-        r.tagId,
-        (r.studentName || 'Unknown').toString().replace(/,/g,' '),
-        r.readerId,
-        r.location,
-        (r.scanType || 'attendance'),
-        r.timestamp
+        r.displayStatus,
+        r.displayTag,
+        (r.displayStudent || 'Unknown').toString().replace(/,/g,' '),
+        r.displayReader,
+        r.displayRoomNumber || r.displayLocation,
+        (r.displayScanType || 'attendance'),
+        r.displayTimestamp || r.timestamp
       ].map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(','))
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -315,6 +547,7 @@ export default function RFIDDashboardPage() {
       readerId: [],
       tagId: []
     });
+    setSearchQuery('');
   };
 
   // Print functionality
@@ -500,7 +733,7 @@ export default function RFIDDashboardPage() {
           />
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
-              <div className="text-red-500 text-6xl mb-4">⚠️</div>
+              <AlertTriangle className="w-16 h-16 text-red-500 mb-4 mx-auto" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Failed to Load Dashboard</h3>
               <p className="text-gray-600 mb-4">{error}</p>
               <Button onClick={refresh} className="bg-blue-600 hover:bg-blue-700">
@@ -583,14 +816,14 @@ export default function RFIDDashboardPage() {
                 label: 'Add Tag',
                 description: 'Register new RFID tag',
                 icon: <Plus className="w-5 h-5 text-white" />,
-                onClick: () => router.push('/list/rfid/tags')
+                onClick: () => setAddTagDialogOpen(true)
               },
               {
                 id: 'configure-reader',
                 label: 'Configure Reader',
                 description: 'Setup RFID reader',
                 icon: <Settings className="w-5 h-5 text-white" />,
-                onClick: () => router.push('/list/rfid/readers')
+                onClick: () => setAddReaderDialogOpen(true)
               },
               {
                 id: 'view-logs',
@@ -685,7 +918,7 @@ export default function RFIDDashboardPage() {
                       </div>
                     ) : error ? (
                       <div className="flex flex-col items-center justify-center h-full text-center">
-                        <div className="text-red-500 text-4xl mb-2">⚠️</div>
+                        <AlertTriangle className="w-8 h-8 text-red-500 mb-2" />
                         <p className="text-sm text-red-600 mb-2">Failed to load tag data</p>
                         <Button
                           variant="outline"
@@ -702,15 +935,27 @@ export default function RFIDDashboardPage() {
                         <DataChart
                           type="pie"
                           data={tagStatusData}
-                          title="Tag Status"
+                          title=""
                           height={250}
                           colors={["#10b981", "#ef4444"]}
                         />
                       ) : (
-                        <div className="flex flex-col items-center justify-center h-full w-full text-center text-gray-500">
-                          <div className="text-4xl mb-2">📊</div>
-                          <p className="text-sm">No data available</p>
-                          <p className="text-xs text-gray-400">Tag status data will appear here once available.</p>
+                        <div className="flex flex-col items-center justify-center h-full w-full">
+                          <EmptyState
+                            icon={<Tag className="w-6 h-6 text-blue-400" />}
+                            title="No data available"
+                            description="Tag status data will appear here once available."
+                            action={
+                              <Button
+                                variant="outline"
+                                className="border-blue-300 text-blue-700 hover:bg-blue-50 rounded-xl"
+                                onClick={handleRefresh}
+                              >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Refresh Data
+                              </Button>
+                            }
+                          />
                         </div>
                       )
                     )}
@@ -737,7 +982,7 @@ export default function RFIDDashboardPage() {
                       </div>
                     ) : error ? (
                       <div className="flex flex-col items-center justify-center h-full text-center">
-                        <div className="text-red-500 text-4xl mb-2">⚠️</div>
+                        <AlertTriangle className="w-8 h-8 text-red-500 mb-2" />
                         <p className="text-sm text-red-600 mb-2">Failed to load reader data</p>
                         <Button
                           variant="outline"
@@ -754,15 +999,27 @@ export default function RFIDDashboardPage() {
                         <DataChart
                           type="pie"
                           data={readerStatusData}
-                          title="Reader Status"
+                          title=""
                           height={250}
                           colors={["#22c55e", "#ef4444"]}
                         />
                       ) : (
-                        <div className="flex flex-col items-center justify-center h-full w-full text-center text-gray-500">
-                          <div className="text-4xl mb-2">📈</div>
-                          <p className="text-sm">No data available</p>
-                          <p className="text-xs text-gray-400">Reader status data will appear here once available.</p>
+                        <div className="flex flex-col items-center justify-center h-full w-full">
+                          <EmptyState
+                            icon={<Wifi className="w-6 h-6 text-blue-400" />}
+                            title="No data available"
+                            description="Reader status data will appear here once available."
+                            action={
+                              <Button
+                                variant="outline"
+                                className="border-blue-300 text-blue-700 hover:bg-blue-50 rounded-xl"
+                                onClick={handleRefresh}
+                              >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Refresh Data
+                              </Button>
+                            }
+                          />
                         </div>
                       )
                     )}
@@ -789,7 +1046,7 @@ export default function RFIDDashboardPage() {
                       </div>
                     ) : error ? (
                       <div className="flex flex-col items-center justify-center h-full text-center">
-                        <div className="text-red-500 text-4xl mb-2">⚠️</div>
+                        <AlertTriangle className="w-8 h-8 text-red-500 mb-2" />
                         <p className="text-sm text-red-600 mb-2">Failed to load scan trends</p>
                         <Button
                           variant="outline"
@@ -811,10 +1068,22 @@ export default function RFIDDashboardPage() {
                           colors={["#3b82f6"]}
                         />
                       ) : (
-                        <div className="flex flex-col items-center justify-center h-full w-full text-center text-gray-500">
-                          <div className="text-4xl mb-2">📅</div>
-                          <p className="text-sm">No trend data available</p>
-                          <p className="text-xs text-gray-400">RFID scans per day will appear here once available.</p>
+                        <div className="flex flex-col items-center justify-center h-full w-full">
+                          <EmptyState
+                            icon={<Layers className="w-6 h-6 text-blue-400" />}
+                            title="No trend data available"
+                            description="RFID scans per day will appear here once available."
+                            action={
+                              <Button
+                                variant="outline"
+                                className="border-blue-300 text-blue-700 hover:bg-blue-50 rounded-xl"
+                                onClick={handleRefresh}
+                              >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Refresh Data
+                              </Button>
+                            }
+                          />
                         </div>
                       )
                     )}
@@ -889,12 +1158,12 @@ export default function RFIDDashboardPage() {
                     }
                   }}>
                     <SelectTrigger className="w-full lg:w-40 text-sm text-gray-500 min-w-0 rounded border-gray-300 bg-white hover:bg-gray-50">
-                      <SelectValue placeholder="Location" />
+                      <SelectValue placeholder="Room Number" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Locations</SelectItem>
-                      {locations.map((l: string) => (
-                        <SelectItem key={l} value={l}>{l}</SelectItem>
+                      <SelectItem value="all">All Rooms</SelectItem>
+                      {roomNumbers.map((room: string) => (
+                        <SelectItem key={room} value={room}>{room}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -921,13 +1190,13 @@ export default function RFIDDashboardPage() {
               </div>
 
               {/* Active Filter Chips */}
-              {Object.values(filters).some(arr => arr.length > 0) && (
+              {(Object.values(filters).some(arr => arr.length > 0) || searchQuery.trim()) && (
                 <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
                   <FilterChips
                     filters={filters}
                     fields={[
                       { key: 'status', label: 'Status', allowIndividualRemoval: true },
-                      { key: 'location', label: 'Location', allowIndividualRemoval: true },
+                      { key: 'location', label: 'Room', allowIndividualRemoval: true },
                       { key: 'scanType', label: 'Type', allowIndividualRemoval: true },
                       { key: 'readerId', label: 'Reader', allowIndividualRemoval: true },
                       { key: 'tagId', label: 'Tag', allowIndividualRemoval: true }
@@ -962,8 +1231,7 @@ export default function RFIDDashboardPage() {
                       entityLabel="log"
                       actions={[
                         { key: 'export', label: 'Export Selected', icon: <Download className="w-4 h-4 mr-2" />, onClick: handleExportSelected },
-                        { key: 'copy', label: 'Copy Tag IDs', icon: <Copy className="w-4 h-4 mr-2" />, onClick: handleCopySelectedTagIds },
-                        { key: 'clear', label: 'Clear Selection', icon: <X className="w-4 h-4 mr-2" />, onClick: () => setSelected(new Set()) }
+                        { key: 'copy', label: 'Copy Tag IDs', icon: <Copy className="w-4 h-4 mr-2" />, onClick: handleCopySelectedTagIds }
                       ]}
                     />
                   </div>
@@ -1036,13 +1304,13 @@ export default function RFIDDashboardPage() {
                                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                                   </button>
                                 </TableCell>
-                                <TableCell className="text-center">{statusBadge(log.status)}</TableCell>
-                                <TableCell className="font-medium text-center">{log.tagId}</TableCell>
-                                <TableCell className="text-center">{log.studentName || 'Unknown'}</TableCell>
-                                <TableCell className="text-center">{log.readerId}</TableCell>
-                                <TableCell className="text-center">{log.location}</TableCell>
-                                <TableCell className="capitalize text-center">{log.scanType || 'attendance'}</TableCell>
-                                <TableCell className="text-center">{log.timestamp}</TableCell>
+                                <TableCell className="text-center">{statusBadge(log.displayStatus)}</TableCell>
+                                <TableCell className="font-medium text-center">{log.displayTag}</TableCell>
+                                <TableCell className="text-center">{log.displayStudent}</TableCell>
+                                <TableCell className="text-center">{log.displayReader}</TableCell>
+                                <TableCell className="text-center">{log.displayRoomNumber || log.displayLocation}</TableCell>
+                                <TableCell className="capitalize text-center">{log.displayScanType}</TableCell>
+                                <TableCell className="text-center">{log.displayTimestamp}</TableCell>
                                 <TableCell className="text-center">
                                   <Button variant="ghost" size="sm" onClick={() => openLogDetails(log)} aria-label="View details" className="hover:rounded transition-[border-radius] duration-200">
                                     <Eye className="w-4 h-4 text-blue-700" />
@@ -1055,19 +1323,20 @@ export default function RFIDDashboardPage() {
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-blue-900">
                                       <div className="bg-blue-50/50 border border-blue-200 rounded p-3">
                                         <div className="font-semibold mb-1">Scan Details</div>
-                                        <div>Tag ID: {log.tagId}</div>
-                                        <div>Type: {log.scanType || 'attendance'}</div>
-                                        <div>Status: {log.status}</div>
+                                        <div>Tag ID: {log.displayTag}</div>
+                                        <div>Type: {log.displayScanType}</div>
+                                        <div>Status: {log.displayStatus}</div>
                                       </div>
                                       <div className="bg-blue-50/50 border border-blue-200 rounded p-3">
                                         <div className="font-semibold mb-1">Reader</div>
-                                        <div>ID: {log.readerId}</div>
-                                        <div>Location: {log.location}</div>
+                                        <div>ID: {log.displayReader}</div>
+                                        <div>Room: {log.displayRoomNumber || log.displayLocation}</div>
+                                        <div>Location: {log.displayLocation}</div>
                                       </div>
                                       <div className="bg-blue-50/50 border border-blue-200 rounded p-3">
                                         <div className="font-semibold mb-1">Subject</div>
-                                        <div>Student: {log.studentName || 'Unknown'}</div>
-                                        <div>Timestamp: {log.timestamp}</div>
+                                        <div>Student: {log.displayStudent}</div>
+                                        <div>Timestamp: {log.displayTimestamp}</div>
                                       </div>
                                     </div>
                                   </TableCell>
@@ -1106,25 +1375,26 @@ export default function RFIDDashboardPage() {
               title: 'Scan',
               columns: 2,
               fields: [
-                { label: 'Tag ID', value: selectedLog.tagId },
-                { label: 'Type', value: selectedLog.scanType || 'attendance' },
-                { label: 'Status', value: selectedLog.status, type: 'badge', badgeVariant: 'default' },
-                { label: 'Timestamp', value: selectedLog.timestamp, type: 'date' }
+                { label: 'Tag ID', value: selectedLog.displayTag },
+                { label: 'Type', value: selectedLog.displayScanType || 'attendance' },
+                { label: 'Status', value: selectedLog.displayStatus, type: 'badge', badgeVariant: 'default' },
+                { label: 'Timestamp', value: selectedLog.displayTimestamp || selectedLog.timestamp }
               ]
             },
             {
               title: 'Reader',
               columns: 2,
               fields: [
-                { label: 'Reader ID', value: selectedLog.readerId },
-                { label: 'Location', value: selectedLog.location || 'Unknown' }
+                { label: 'Reader', value: selectedLog.displayReader },
+                { label: 'Room Number', value: selectedLog.displayRoomNumber || 'Unknown' },
+                { label: 'Location', value: selectedLog.displayLocation || 'Unknown' }
               ]
             },
             {
               title: 'Subject',
               columns: 2,
               fields: [
-                { label: 'Student', value: selectedLog.studentName || 'Unknown' }
+                { label: 'Student', value: selectedLog.displayStudent || 'Unknown' }
               ]
             }
           ]) : []}
@@ -1232,6 +1502,41 @@ export default function RFIDDashboardPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Add Tag Dialog */}
+        <RFIDTagFormDialog
+          open={addTagDialogOpen}
+          onOpenChange={setAddTagDialogOpen}
+          mode="create"
+          onSubmit={async (data) => {
+            try {
+              const res = await fetch('/api/rfid/tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+              });
+              if (!res.ok) throw new Error('Failed to create tag');
+              setAddTagDialogOpen(false);
+              handleRefresh();
+              toast.success('Tag added successfully');
+            } catch (error: any) {
+              toast.error(error.message || 'Failed to add tag');
+              throw error;
+            }
+          }}
+        />
+
+        {/* Add Reader Dialog */}
+        <RFIDReaderFormDialog
+          open={addReaderDialogOpen}
+          onOpenChange={setAddReaderDialogOpen}
+          type="create"
+          onSuccess={() => {
+            setAddReaderDialogOpen(false);
+            handleRefresh();
+            toast.success('Reader added successfully');
+          }}
+        />
       </div>
     </div>
   );

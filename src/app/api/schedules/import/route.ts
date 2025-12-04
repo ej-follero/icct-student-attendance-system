@@ -225,7 +225,7 @@ export async function POST(request: NextRequest) {
             startTime: { lte: validated.endTime },
             endTime: { gte: validated.startTime },
             roomId: room.roomId,
-            status: { not: 'CANCELLED' },
+            deletedAt: null, // Only check conflicts with non-deleted schedules
             semesterId: semesterId
           }
         });

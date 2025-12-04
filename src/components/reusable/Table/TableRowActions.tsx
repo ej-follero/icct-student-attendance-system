@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Archive, Eye, Pencil, Trash2 } from "lucide-react";
 
 interface TableRowActionsProps {
   onView: () => void;
@@ -12,6 +12,8 @@ interface TableRowActionsProps {
   deleteTooltip?: string;
   editTooltip?: string;
   editHasWarning?: boolean;
+  disableDelete?: boolean;
+  deleteVariant?: "delete" | "archive";
 }
 
 export function TableRowActions({
@@ -27,11 +29,20 @@ export function TableRowActions({
   viewAriaLabel,
   editAriaLabel,
   deleteAriaLabel,
+  disableDelete = false,
+  deleteVariant = "delete",
 }: TableRowActionsProps & {
   viewAriaLabel?: string;
   editAriaLabel?: string;
   deleteAriaLabel?: string;
 }) {
+  const DeleteIcon = deleteVariant === "archive" ? Archive : Trash2;
+  const deleteButtonHover =
+    deleteVariant === "archive" ? "hover:bg-orange-50" : "hover:bg-red-50";
+  const deleteIconClass =
+    deleteVariant === "archive" ? "text-orange-600" : "text-red-600";
+  const defaultDeleteTooltip = deleteVariant === "archive" ? "Archive" : "Delete";
+
   return (
     <TooltipProvider>
       <div className={`flex gap-1 justify-center ${className}`}>
@@ -75,16 +86,16 @@ export function TableRowActions({
                 variant="ghost"
                 size="icon"
                 aria-label={deleteAriaLabel || `Delete ${itemName}`}
-                className="hover:bg-red-50"
+                className={deleteButtonHover}
                 onClick={onDelete}
-                disabled={disabled}
+                disabled={disabled || disableDelete}
               >
-                <Trash2 className="h-4 w-4 text-red-600" />
+                <DeleteIcon className={`h-4 w-4 ${deleteIconClass}`} />
               </Button>
             </span>
           </TooltipTrigger>
           <TooltipContent side="top" align="center" className="bg-blue-900 text-white">
-            {deleteTooltip || "Delete"}
+            {deleteTooltip || defaultDeleteTooltip}
           </TooltipContent>
         </Tooltip>
       </div>

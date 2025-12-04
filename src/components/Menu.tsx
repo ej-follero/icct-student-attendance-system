@@ -49,6 +49,9 @@ import {
   Upload,
   Building2,
   GraduationCap,
+  Plus,
+  Eye,
+  MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils"; // shadcn classnames utility
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -83,7 +86,7 @@ const menuConfig: MenuConfig = {
       title: "DASHBOARD",
       sectionIcon: <LayoutDashboard className="w-5 h-5" />,
       items: [
-        { icon: <LayoutDashboard className="w-5 h-5" />, label: "System Dashboard", href: "/dashboard", description: "System-wide overview" },
+        { icon: <LayoutDashboard className="w-5 h-5" />, label: "System Dashboard", href: "/dashboard/admin", description: "System-wide overview" },
       ],
     },
     {
@@ -168,7 +171,6 @@ const menuConfig: MenuConfig = {
           description: "Announcements and events",
           subItems: [
             { icon: <Megaphone className="w-5 h-5" />, label: "Announcements", href: "/list/announcements", description: "Broadcast announcements" },
-            { icon: <Calendar className="w-5 h-5" />, label: "Events", href: "/list/events", description: "Manage events" },
             { icon: <Bell className="w-5 h-5" />, label: "Notifications", href: "/notifications", description: "System notifications" },
           ]
         },
@@ -285,7 +287,7 @@ const menuConfig: MenuConfig = {
       title: "DASHBOARD",
       sectionIcon: <LayoutDashboard className="w-5 h-5" />,
       items: [
-        { icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard", href: "/dashboard" },
+        { icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard", href: "/dashboard/admin" },
       ],
     },
     {
@@ -376,7 +378,6 @@ const menuConfig: MenuConfig = {
           description: "Announcements and events",
           subItems: [
             { icon: <Megaphone className="w-5 h-5" />, label: "Announcements", href: "/list/announcements", description: "Broadcast announcements" },
-            { icon: <Calendar className="w-5 h-5" />, label: "Events", href: "/list/events", description: "Manage events" },
             { icon: <Bell className="w-5 h-5" />, label: "Notifications", href: "/notifications", description: "System notifications" },
           ]
         },
@@ -424,7 +425,7 @@ const menuConfig: MenuConfig = {
       title: "DASHBOARD",
       sectionIcon: <LayoutDashboard className="w-5 h-5" />,
       items: [
-        { icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard", href: "/dashboard" },
+        { icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard", href: "/dashboard/admin" },
       ],
     },
     {
@@ -453,7 +454,7 @@ const menuConfig: MenuConfig = {
           icon: <CalendarRange className="w-5 h-5" />, label: "Scheduling", href: "#", description: "Time and schedule management",
           subItems: [
             { icon: <CalendarRange className="w-5 h-5" />, label: "Schedules", href: "/list/schedules", description: "Class schedules" },
-            { icon: <Calendar className="w-5 h-5" />, label: "Calendar", href: "/list/academic-calendar", description: "Academic calendar" },
+            { icon: <Calendar className="w-5 h-5" />, label: "Academic Calendar", href: "/list/academic-calendar", description: "Academic calendar" },
             { icon: <GraduationCap className="w-5 h-5" />, label: "Academic Years", href: "/list/academic-years", description: "Manage academic years and semesters" },
           ]
         },
@@ -506,7 +507,7 @@ const menuConfig: MenuConfig = {
           description: "Announcements and events",
           subItems: [
             { icon: <Megaphone className="w-5 h-5" />, label: "Announcements", href: "/list/announcements", description: "Broadcast announcements" },
-            { icon: <Calendar className="w-5 h-5" />, label: "Events", href: "/list/events", description: "Manage events" },
+            { icon: <Calendar className="w-5 h-5" />, label: "Academic Calendar", href: "/list/academic-calendar", description: "Manage events and calendar" },
           ]
         },
         { icon: <Mail className="w-5 h-5" />, label: "Email", href: "/list/email", description: "Email management" },
@@ -543,63 +544,36 @@ const menuConfig: MenuConfig = {
 
   teacher: [
     {
-      title: "SCHEDULE",
+      title: "DASHBOARD",
+      sectionIcon: <LayoutDashboard className="w-5 h-5" />,
+      items: [
+        { icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard", href: "/dashboard/teacher", description: "View your dashboard overview" },
+      ],
+    },
+    {
+      title: "SCHEDULE & ATTENDANCE",
       sectionIcon: <Calendar className="w-5 h-5" />,
       items: [
-        { icon: <Calendar className="w-5 h-5" />, label: "My Schedule", href: "/list/schedule" },
+        { icon: <Calendar className="w-5 h-5" />, label: "Instructor Schedule", href: "/list/schedule", description: "View your teaching schedule" },
+        { icon: <Plus className="w-5 h-5" />, label: "Record Attendance", href: "/list/attendance/record", description: "Take and record student attendance" },
+        { icon: <Clock className="w-5 h-5" />, label: "Attendance Log", href: "/list/attendance/log", description: "View attendance history" },
+        { icon: <Eye className="w-5 h-5" />, label: "Class Summary", href: "/list/attendance/summary", description: "View attendance summaries for classes" },
       ],
     },
     {
-      title: "ATTENDANCE",
-      sectionIcon: <Clock className="w-5 h-5" />,
+      title: "ACADEMIC MANAGEMENT",
+      sectionIcon: <BookOpen className="w-5 h-5" />,
       items: [
-        { icon: <Clock className="w-5 h-5" />, label: "Record Attendance", href: "/list/attendance/record" },
-        { icon: <Clock className="w-5 h-5" />, label: "My Attendance Log", href: "/list/attendance/log" },
-        { icon: <Clock className="w-5 h-5" />, label: "Class Attendance Summary", href: "/list/attendance/summary" },
+        { icon: <Users className="w-5 h-5" />, label: "My Classes", href: "/list/classes", description: "Manage assigned classes" },
+        { icon: <BookOpen className="w-5 h-5" />, label: "My Subjects", href: "/list/subjects", description: "View assigned subjects" },
+        { icon: <Users className="w-5 h-5" />, label: "Student List", href: "/list/users", description: "View enrolled students" },
       ],
     },
     {
-      title: "CLASS MANAGEMENT",
-      sectionIcon: <School className="w-5 h-5" />,
+      title: "ACCOUNT",
+      sectionIcon: <Settings className="w-5 h-5" />,
       items: [
-        { icon: <School className="w-5 h-5" />, label: "My Classes", href: "/list/classes" },
-        { icon: <School className="w-5 h-5" />, label: "My Subjects", href: "/list/subjects" },
-                 { icon: <School className="w-5 h-5" />, label: "Student List", href: "/list/users" },
-      ],
-    },
-    {
-      title: "ANALYTICS",
-      sectionIcon: <BarChart3 className="w-5 h-5" />,
-      items: [
-        { icon: <BarChart3 className="w-5 h-5" />, label: "My Analytics", href: "/teacher/analytics" },
-        { icon: <TrendingUp className="w-5 h-5" />, label: "Class Trends", href: "/teacher/class-trends" },
-        { icon: <Users className="w-5 h-5" />, label: "Student Insights", href: "/teacher/student-insights" },
-        { icon: <Target className="w-5 h-5" />, label: "Performance Metrics", href: "/teacher/performance" },
-      ],
-    },
-    {
-      title: "REPORTS",
-      sectionIcon: <BarChart3 className="w-5 h-5" />,
-      items: [
-        { icon: <BarChart3 className="w-5 h-5" />, label: "My Reports", href: "/teacher/reports" },
-        { icon: <FileText className="w-5 h-5" />, label: "Class Reports", href: "/teacher/class-reports" },
-        { icon: <Download className="w-5 h-5" />, label: "Export Data", href: "/teacher/export" },
-      ],
-    },
-    {
-      title: "ANNOUNCEMENTS",
-      sectionIcon: <Megaphone className="w-5 h-5" />,
-      items: [
-        { icon: <Megaphone className="w-5 h-5" />, label: "View Announcements", href: "/list/announcements" },
-        { icon: <Megaphone className="w-5 h-5" />, label: "Post Announcement", href: "/list/announcements/post" },
-      ],
-    },
-    
-    {
-      title: "PROFILE",
-      sectionIcon: <User className="w-5 h-5" />,
-      items: [
-        { icon: <User className="w-5 h-5" />, label: "Profile", href: "/profile" },
+        { icon: <Settings className="w-5 h-5" />, label: "My Profile", href: "/profile", description: "View and manage profile" },
       ],
     },
     {

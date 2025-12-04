@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,7 @@ export function AddScheduleDialog({ open, onOpenChange, onScheduleCreated }: Add
   const [sectionSearch, setSectionSearch] = useState("");
   const [instructorSearch, setInstructorSearch] = useState("");
   const [roomSearch, setRoomSearch] = useState("");
+  const instructorSearchInputRef = useRef<HTMLInputElement>(null);
 
   const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
   const scheduleTypes = ['REGULAR', 'MAKEUP', 'SPECIAL', 'REVIEW', 'EXAM'];
@@ -60,10 +61,27 @@ export function AddScheduleDialog({ open, onOpenChange, onScheduleCreated }: Add
     section.sectionName.toLowerCase().includes(sectionSearch.toLowerCase())
   );
 
-  const filteredInstructors = instructors.filter(instructor =>
-    instructor.firstName.toLowerCase().includes(instructorSearch.toLowerCase()) ||
-    instructor.lastName.toLowerCase().includes(instructorSearch.toLowerCase())
-  );
+  const filteredInstructors = instructors.filter(instructor => {
+    if (!instructorSearch.trim()) {
+      return true;
+    }
+    const searchLower = instructorSearch.toLowerCase().trim();
+    const firstName = (instructor.firstName || '').toLowerCase();
+    const lastName = (instructor.lastName || '').toLowerCase();
+    const middleName = (instructor.middleName || '').toLowerCase();
+    const fullName = `${firstName} ${middleName} ${lastName}`.replace(/\s+/g, ' ').trim();
+    const reverseFullName = `${lastName} ${middleName} ${firstName}`.replace(/\s+/g, ' ').trim();
+    const email = (instructor.email || '').toLowerCase();
+    const employeeId = (instructor.employeeId || '').toLowerCase();
+    
+    return firstName.includes(searchLower) ||
+           lastName.includes(searchLower) ||
+           middleName.includes(searchLower) ||
+           fullName.includes(searchLower) ||
+           reverseFullName.includes(searchLower) ||
+           email.includes(searchLower) ||
+           employeeId.includes(searchLower);
+  });
 
   const filteredRooms = rooms.filter(room =>
     room.roomNo.toLowerCase().includes(roomSearch.toLowerCase())
@@ -515,14 +533,32 @@ export function AddScheduleDialog({ open, onOpenChange, onScheduleCreated }: Add
                         <SelectContent className="max-h-80">
                           <div className="p-2 border-b">
                             <div className="relative">
-                              <Search className="absolute left-2 top-2.5 h-3 w-3 text-gray-400" />
+                              <Search className="absolute left-2 top-2.5 h-3 w-3 text-gray-400 pointer-events-none" />
                               <input
+                                ref={instructorSearchInputRef}
                                 type="text"
                                 placeholder="Search instructors..."
                                 value={instructorSearch}
                                 onChange={(e) => setInstructorSearch(e.target.value)}
                                 className="w-full pl-7 pr-8 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTimeout(() => {
+                                    instructorSearchInputRef.current?.focus();
+                                  }, 0);
+                                }}
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setTimeout(() => {
+                                    instructorSearchInputRef.current?.focus();
+                                  }, 0);
+                                }}
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  setTimeout(() => {
+                                    instructorSearchInputRef.current?.focus();
+                                  }, 0);
+                                }}
                                 onFocus={handleSafeFocus}
                                 onBlur={handleSafeFocus}
                               />

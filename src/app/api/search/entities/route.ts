@@ -43,27 +43,21 @@ export async function GET(req: NextRequest) {
     if (type === 'student') {
       const items = await prisma.student.findMany({
         where: {
-          AND: [
-            {
-              OR: [
-                { firstName: { contains: q, mode: 'insensitive' } },
-                { lastName: { contains: q, mode: 'insensitive' } },
-                { studentIdNum: { contains: q, mode: 'insensitive' } },
-              ],
-            },
-            // Only show students who don't have RFID tags yet
-            {
-              RFIDTags: null
-            }
+          OR: [
+            { firstName: { contains: q, mode: 'insensitive' } },
+            { lastName: { contains: q, mode: 'insensitive' } },
+            { studentIdNum: { contains: q, mode: 'insensitive' } },
+            { rfidTag: { contains: q, mode: 'insensitive' } },
           ],
+          status: 'ACTIVE', // Only show active students
         },
-        select: { studentId: true, firstName: true, lastName: true, studentIdNum: true },
+        select: { studentId: true, firstName: true, lastName: true, studentIdNum: true, rfidTag: true },
         take: limit,
       });
       return NextResponse.json({
         items: items.map(s => ({
           value: String(s.studentId),
-          label: `${s.firstName} ${s.lastName} • ${s.studentIdNum}`,
+          label: `${s.firstName} ${s.lastName} • ${s.studentIdNum}${s.rfidTag ? ` (RFID: ${s.rfidTag})` : ''}`,
         })),
       });
     }
@@ -75,6 +69,7 @@ export async function GET(req: NextRequest) {
           { lastName: { contains: q, mode: 'insensitive' } },
           { employeeId: { contains: q, mode: 'insensitive' } },
         ],
+        status: 'ACTIVE', // Only show active instructors
       },
       select: { instructorId: true, firstName: true, lastName: true, employeeId: true },
       take: limit,

@@ -1808,6 +1808,109 @@ const DownloadDropdown = ({
         }
       }
       
+      // Special handling for streak-analysis modal: capture chart and breakdown separately
+      if (modalType === 'streak-analysis') {
+        console.log('📸 Capturing Streak Analysis chart and breakdown...');
+        
+        // Capture the chart
+        const chartElement = document.querySelector('[data-chart="streak-analysis"]') as HTMLElement;
+        if (chartElement) {
+          try {
+            // Find the parent container that includes the title
+            const chartContainer = chartElement.closest('.bg-white.border') as HTMLElement;
+            if (chartContainer) {
+              const canvas = await html2canvas(chartContainer, {
+                background: '#ffffff',
+                useCORS: true,
+                allowTaint: true,
+                logging: false,
+                width: chartContainer.offsetWidth,
+                height: chartContainer.offsetHeight
+              });
+              chartImages['Streak Timeline Chart'] = canvas.toDataURL('image/png', 1.0);
+              console.log('✅ Captured Streak Timeline Chart');
+            }
+          } catch (error) {
+            console.warn('Failed to capture streak chart:', error);
+          }
+        }
+        
+        // Capture the period breakdown
+        const breakdownElement = document.querySelector('[data-breakdown="streak-analysis"]') as HTMLElement;
+        if (breakdownElement) {
+          try {
+            // Find the scrollable content area - look for div with overflow-y-auto
+            let scrollableContent: HTMLElement | null = null;
+            const children = breakdownElement.children;
+            for (let i = 0; i < children.length; i++) {
+              const child = children[i] as HTMLElement;
+              const computedStyle = window.getComputedStyle(child);
+              if (computedStyle.overflowY === 'auto' || computedStyle.overflowY === 'scroll') {
+                scrollableContent = child;
+                break;
+              }
+            }
+            
+            if (scrollableContent) {
+              // Temporarily remove height restrictions to capture full content
+              const originalMaxHeight = scrollableContent.style.maxHeight;
+              const originalOverflow = scrollableContent.style.overflow;
+              const originalOverflowY = scrollableContent.style.overflowY;
+              const originalHeight = scrollableContent.style.height;
+              
+              // Get computed max-height to restore later
+              const computedMaxHeight = window.getComputedStyle(scrollableContent).maxHeight;
+              
+              // Set to auto to capture full content
+              scrollableContent.style.maxHeight = 'none';
+              scrollableContent.style.overflow = 'visible';
+              scrollableContent.style.overflowY = 'visible';
+              scrollableContent.style.height = 'auto';
+              
+              // Wait for layout to update
+              await new Promise(resolve => setTimeout(resolve, 200));
+              
+              // Capture the full breakdown element (now expanded to full height)
+              const canvas = await html2canvas(breakdownElement, {
+                background: '#ffffff',
+                useCORS: true,
+                allowTaint: true,
+                logging: false
+              });
+              
+              // Restore original styles
+              scrollableContent.style.maxHeight = originalMaxHeight || computedMaxHeight;
+              scrollableContent.style.overflow = originalOverflow;
+              scrollableContent.style.overflowY = originalOverflowY;
+              scrollableContent.style.height = originalHeight;
+              
+              chartImages['Period Breakdown'] = canvas.toDataURL('image/png', 1.0);
+              console.log('✅ Captured Period Breakdown (full content)', {
+                width: canvas.width,
+                height: canvas.height,
+                scrollWidth: breakdownElement.scrollWidth,
+                scrollHeight: breakdownElement.scrollHeight
+              });
+            } else {
+              // Fallback: capture without finding scrollable content
+              const canvas = await html2canvas(breakdownElement, {
+                background: '#ffffff',
+                useCORS: true,
+                allowTaint: true,
+                logging: false
+              });
+              chartImages['Period Breakdown'] = canvas.toDataURL('image/png', 1.0);
+              console.log('✅ Captured Period Breakdown (fallback)', {
+                width: canvas.width,
+                height: canvas.height
+              });
+            }
+          } catch (error) {
+            console.warn('Failed to capture period breakdown:', error);
+          }
+        }
+      }
+
       // Also capture individual chart elements as fallback
       const modalChartElements = {
         attendanceDistribution: document.querySelector('[data-chart="attendance-distribution"]') as HTMLElement,
@@ -1819,8 +1922,8 @@ const DownloadDropdown = ({
         streakAnalysis: document.querySelector('[data-chart="streak-analysis"]') as HTMLElement
       };
 
-      // Capture individual charts if modal content capture failed
-      if (Object.keys(chartImages).length === 0) {
+      // Capture individual charts if modal content capture failed and not streak-analysis
+      if (Object.keys(chartImages).length === 0 && modalType !== 'streak-analysis') {
         console.log('📸 Capturing individual chart elements...');
         for (const [chartName, element] of Object.entries(modalChartElements)) {
           if (element) {
@@ -2484,26 +2587,32 @@ export const FullscreenStreakAnalysisModal = ({
           {/* Streak Statistics Overview */}
           <div className="grid grid-cols-4 gap-4">
             <div className="bg-green-50 border border-green-200 rounded p-4">
-              <div className="text-3xl font-bold text-green-600">{streakData?.stats?.maxGoodStreak || 0}</div>
-              <div className="text-sm text-green-600 font-medium">Longest Good Streak</div>
-              <div className="text-xs text-green-500 mt-1">Consecutive days ≥85%</div>
+              <div className="text-3xl font-bold text-green-600">
+                {streakData?.data?.reduce((sum: number, entry: any) => sum + (entry.goodStreaks || 0), 0).toLocaleString() || 0}
+              </div>
+              <div className="text-sm text-green-600 font-medium">Total Good Streaks</div>
+              <div className="text-xs text-green-500 mt-1">Periods with ≥85% attendance</div>
             </div>
             <div className="bg-red-50 border border-red-200 rounded p-4">
-              <div className="text-3xl font-bold text-red-600">{streakData?.stats?.maxPoorStreak || 0}</div>
-              <div className="text-sm text-red-600 font-medium">Longest Poor Streak</div>
-              <div className="text-xs text-red-500 mt-1">Consecutive days &lt;85%</div>
+              <div className="text-3xl font-bold text-red-600">
+                {streakData?.data?.reduce((sum: number, entry: any) => sum + (entry.poorStreaks || 0), 0).toLocaleString() || 0}
+              </div>
+              <div className="text-sm text-red-600 font-medium">Total Poor Streaks</div>
+              <div className="text-xs text-red-500 mt-1">Periods with &lt;85% attendance</div>
             </div>
             <div className="bg-blue-50 border border-blue-200 rounded p-4">
-              <div className="text-3xl font-bold text-blue-600">{Math.abs(streakData?.stats?.currentStreak || 0)}</div>
-              <div className="text-sm text-blue-600 font-medium">
-                Current {streakData?.stats?.currentStreakType === 'good' ? 'Good' : 'Poor'} Streak
+              <div className="text-3xl font-bold text-blue-600">
+                {streakData?.data?.length || 0}
               </div>
-              <div className="text-xs text-blue-500 mt-1">Active streak</div>
+              <div className="text-sm text-blue-600 font-medium">Total Periods</div>
+              <div className="text-xs text-blue-500 mt-1">Data points analyzed</div>
             </div>
             <div className="bg-gray-50 border border-gray-200 rounded p-4">
-              <div className="text-3xl font-bold text-gray-600">{streakData?.stats?.totalGoodDays || 0}</div>
-              <div className="text-sm text-gray-600 font-medium">Total Good Days</div>
-              <div className="text-xs text-gray-500 mt-1">Out of {streakData?.data?.length || 0} days</div>
+              <div className="text-3xl font-bold text-gray-600">
+                {streakData?.stats?.totalGoodDays || streakData?.data?.reduce((sum: number, entry: any) => sum + (entry.goodStreaks || 0), 0) || 0}
+              </div>
+              <div className="text-sm text-gray-600 font-medium">Good Periods</div>
+              <div className="text-xs text-gray-500 mt-1">Out of {streakData?.data?.length || 0} total</div>
             </div>
           </div>
 
@@ -2514,141 +2623,123 @@ export const FullscreenStreakAnalysisModal = ({
               <div className="w-1 h-5 bg-gradient-to-b from-blue-600 to-blue-800 rounded-full"></div>
               <h3 className="text-lg font-bold text-blue-900">Streak Timeline</h3>
             </div>
-            <div className="h-96">
+            <div className="h-96" data-chart="streak-analysis">
               {(!streakData?.data || streakData?.data.length === 0) ? (
                 <NoDataState selectedSubject={localSelectedSubject} type={type} subjects={subjects} />
               ) : (
-                <div data-chart="streak-analysis" className="w-full h-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={streakData?.data || []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis 
-                    dataKey={getXAxisConfig?.().dataKey || 'date'}
-                    tick={{ fontSize: 12, fill: '#6b7280' }}
-                    axisLine={{ stroke: '#e5e7eb' }}
-                    tickFormatter={getXAxisConfig?.().tickFormatter}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 12, fill: '#6b7280' }}
-                    axisLine={{ stroke: '#e5e7eb' }}
-                    tickFormatter={(value) => `${Math.abs(value)}`}
-                  />
-                  <RechartsTooltip 
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                    }}
-                    labelFormatter={(label) => {
-                      const xAxisConfig = getXAxisConfig?.();
-                      if (xAxisConfig?.tickFormatter) {
-                        return xAxisConfig.tickFormatter(label);
-                      }
-                      return label;
-                    }}
-                    formatter={(value: any, name: any, props: any) => {
-                      const streakType = props?.payload?.streakType;
-                      const isBreak = props?.payload?.isStreakBreak;
-                      const attendanceRate = props?.payload?.attendanceRate;
-                      const streakLabel = streakType === 'good' ? 'Good Streak' : 'Poor Streak';
-                      const breakLabel = isBreak ? ' (Streak Break)' : '';
-                      return [
-                        `${Math.abs(value)} days${breakLabel}`,
-                        streakLabel,
-                        `Attendance: ${attendanceRate}%`
-                      ];
-                    }}
-                  />
-                  <Bar 
-                    dataKey="currentStreak" 
-                    fill="#6b7280"
-                    radius={[2, 2, 0, 0]}
-                  >
-                    {(streakData?.data || []).map((entry: any, index: number) => (
-                      <Cell 
-                        key={`cell-${index}`}
-                        fill={entry.currentStreak > 0 ? '#22c55e' : entry.currentStreak < 0 ? '#ef4444' : '#6b7280'}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-                </div>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={streakData.data}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                    <XAxis 
+                      dataKey={getXAxisConfig?.().dataKey || 'date'}
+                      tick={{ fontSize: 12, fill: '#6b7280' }}
+                      axisLine={{ stroke: '#e5e7eb' }}
+                      tickFormatter={getXAxisConfig?.().tickFormatter}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12, fill: '#6b7280' }}
+                      axisLine={{ stroke: '#e5e7eb' }}
+                      tickFormatter={(value) => `${Math.abs(value)}`}
+                    />
+                    <RechartsTooltip 
+                      contentStyle={{
+                        backgroundColor: 'white',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
+                      labelFormatter={(label) => {
+                        const xAxisConfig = getXAxisConfig?.();
+                        if (xAxisConfig?.tickFormatter) {
+                          return xAxisConfig.tickFormatter(label);
+                        }
+                        return label;
+                      }}
+                      formatter={(value: any, name: any, props: any) => {
+                        const month = props?.payload?.month;
+                        const totalStudents = props?.payload?.totalStudents;
+                        const averageStreak = props?.payload?.averageStreak;
+                        const monthName = month === 8 ? 'August' : month === 9 ? 'September' : month === 10 ? 'October' : month === 11 ? 'November' : month === 12 ? 'December' : `Month ${month}`;
+                        return [
+                          `${value.toLocaleString()} ${name}`,
+                          `${monthName} - ${totalStudents?.toLocaleString()} students`,
+                          `Average: ${averageStreak?.toFixed(1)}%`
+                        ];
+                      }}
+                    />
+                    <Legend />
+                    <Bar 
+                      dataKey="goodStreaks" 
+                      fill="#10b981"
+                      radius={[2, 2, 0, 0]}
+                      name="Good Streaks"
+                    />
+                    <Bar 
+                      dataKey="poorStreaks" 
+                      fill="#ef4444"
+                      radius={[2, 2, 0, 0]}
+                      name="Poor Streaks"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
               )}
             </div>
           </div>
 
           {/* Detailed Breakdown */}
-          <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm hover:shadow-lg transition-all duration-300 relative overflow-hidden group">
+          <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm hover:shadow-lg transition-all duration-300 relative overflow-hidden group" data-breakdown="streak-analysis">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-blue-600"></div>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-1 h-5 bg-gradient-to-b from-blue-600 to-blue-800 rounded-full"></div>
-              <h3 className="text-lg font-bold text-blue-900">Streak Breakdown</h3>
+              <h3 className="text-lg font-bold text-blue-900">Period Breakdown</h3>
             </div>
-            <div className="space-y-4">
-              {(() => {
-                const streaks = [];
-                let currentStreak = 0;
-                let currentType = 'none';
-                
-                for (let i = 0; i < (streakData?.data || []).length; i++) {
-                  const point = (streakData?.data || [])[i];
-                  if (point.isStreakBreak || i === 0) {
-                    if (currentStreak > 0) {
-                      streaks.push({
-                        type: currentType,
-                        length: currentStreak,
-                        startIndex: i - currentStreak,
-                        endIndex: i - 1
-                      });
-                    }
-                    currentStreak = 1;
-                    currentType = point.streakType;
-                  } else {
-                    currentStreak++;
-                  }
-                }
-                
-                // Add the last streak
-                if (currentStreak > 0) {
-                  streaks.push({
-                    type: currentType,
-                    length: currentStreak,
-                    startIndex: (streakData?.data || []).length - currentStreak,
-                    endIndex: (streakData?.data || []).length - 1
-                  });
-                }
-
-                return streaks.map((streak, index) => (
-                  <div 
-                    key={index}
-                    className={`p-4 rounded border ${
-                      streak.type === 'good' 
-                        ? 'bg-green-50 border-green-200' 
-                        : 'bg-red-50 border-red-200'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className={`font-semibold ${
-                          streak.type === 'good' ? 'text-green-700' : 'text-red-700'
-                        }`}>
-                          {streak.type === 'good' ? 'Good' : 'Poor'} Streak #{index + 1}
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {(!streakData?.data || streakData.data.length === 0) ? (
+                <div className="text-gray-500 text-sm">No streak data available</div>
+              ) : (
+                streakData.data.map((entry: any, index: number) => {
+                  const dateLabel = entry.date || entry.month || entry.week || entry.hour || `Period ${index + 1}`;
+                  const goodCount = entry.goodStreaks || 0;
+                  const poorCount = entry.poorStreaks || 0;
+                  const totalStudents = entry.totalStudents || 0;
+                  const averageStreak = entry.averageStreak || 0;
+                  
+                  return (
+                    <div 
+                      key={index}
+                      className="p-4 rounded border bg-gray-50 border-gray-200"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="font-semibold text-gray-700">
+                          {getXAxisConfig?.().tickFormatter ? getXAxisConfig().tickFormatter(dateLabel) : dateLabel}
                         </div>
-                        <div className="text-sm text-gray-600">
-                          {streak.length} consecutive days
+                        <div className="text-sm text-gray-500">
+                          {totalStudents.toLocaleString()} students
                         </div>
                       </div>
-                      <div className={`text-2xl font-bold ${
-                        streak.type === 'good' ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {streak.length}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-green-50 border border-green-200 rounded p-3">
+                          <div className="text-lg font-bold text-green-600">
+                            {goodCount.toLocaleString()}
+                          </div>
+                          <div className="text-xs text-green-600 font-medium">Good Streaks</div>
+                        </div>
+                        <div className="bg-red-50 border border-red-200 rounded p-3">
+                          <div className="text-lg font-bold text-red-600">
+                            {poorCount.toLocaleString()}
+                          </div>
+                          <div className="text-xs text-red-600 font-medium">Poor Streaks</div>
+                        </div>
                       </div>
+                      {averageStreak > 0 && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          Average attendance: {averageStreak.toFixed(1)}%
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ));
-              })()}
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

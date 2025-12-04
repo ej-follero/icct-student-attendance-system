@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Calendar, Plus, Download, Upload, Edit, Trash2, AlertTriangle, Clock, Users, MapPin, CheckCircle, XCircle, Search, RefreshCw, Printer, Columns3, List, Settings, Bell, Building2, RotateCcw, Eye, Pencil, BookOpen, GraduationCap, BadgeInfo, X, ChevronRight, Hash, Tag, Layers, Info, UserCheck as UserCheckIcon, Archive } from "lucide-react";
+import { Calendar, Plus, Download, Upload, Edit, Trash2, AlertTriangle, Clock, Users, MapPin, CheckCircle, XCircle, Search, RefreshCw, Printer, Columns3, List, Settings, Bell, Building2, RotateCcw, Eye, Pencil, BookOpen, GraduationCap, BadgeInfo, X, ChevronRight, Hash, Tag, Layers, Info, UserCheck as UserCheckIcon, Archive, Filter } from "lucide-react";
 import Fuse from "fuse.js";
 import { useDebounce } from '@/hooks/use-debounce';
 import { safeHighlight } from "@/lib/sanitizer";
@@ -36,6 +36,7 @@ import BulkActions from '../../../../components/BulkActions';
 import { ICCT_CLASSES } from '../../../../lib/colors';
 import { EmptyState } from '@/components/reusable';
 import { Schedule } from '@/types/schedule';
+import { FilterChips } from '@/components/FilterChips';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
@@ -165,27 +166,58 @@ export default function ClassSchedulesPage() {
     { accessor: 'actions', header: 'Actions', required: true },
   ];
 
-  // Fuse.js for fuzzy search
+  // Enhanced Fuse.js for fuzzy search with weighted fields and better partial matching
   const fuse = useMemo(() => new Fuse(schedules, {
     keys: [
-      'subject.subjectName',
-      'subject.subjectCode', 
-      'section.sectionName',
-      'instructor.firstName',
-      'instructor.lastName',
-      'room.roomNo',
-      'day',
-      'scheduleType',
-      'status'
+      // High priority fields (weight: 2)
+      { name: 'subject.subjectName', weight: 2 },
+      { name: 'subject.subjectCode', weight: 2 },
+      { name: 'section.sectionName', weight: 2 },
+      // Medium priority fields (weight: 1.5)
+      { name: 'instructor.firstName', weight: 1.5 },
+      { name: 'instructor.lastName', weight: 1.5 },
+      { name: 'room.roomNo', weight: 1.5 },
+      { name: 'academicYear', weight: 1.5 },
+      // Standard priority fields (weight: 1)
+      { name: 'day', weight: 1 },
+      { name: 'scheduleType', weight: 1 },
+      { name: 'status', weight: 1 },
+      { name: 'startTime', weight: 1 },
+      { name: 'endTime', weight: 1 },
+      // Lower priority fields (weight: 0.5)
+      { name: 'notes', weight: 0.5 },
+      { name: 'semester.semesterName', weight: 0.5 },
     ],
-    threshold: 0.3,
+    threshold: 0.2, // Very lenient threshold for better partial matching (e.g., "bsp-sub" matches "BSP-SUB-101")
     includeMatches: true,
+    ignoreLocation: true, // Search across entire strings
+    minMatchCharLength: 1, // Allow single character matches for better partial matching
+    findAllMatches: true, // Find all matches, not just the first
+    shouldSort: true, // Sort results by relevance
+    distance: 100, // Maximum distance for matching (higher = more lenient)
   }), [schedules]);
 
-  // Fuzzy search results
+  // Fuzzy search results with normalized search query for better partial matching
   const fuzzyResults = useMemo(() => {
     if (!debouncedSearch) return schedules.map((s: Schedule, i: number) => ({ item: s, refIndex: i }));
-    return fuse.search(debouncedSearch) as FuseResult<Schedule>[];
+    
+    // Normalize search query: remove special characters and convert to lowercase for better matching
+    // This helps match "bsp-sub" with "BSP-SUB-101" or "BSP_SUB_101"
+    const normalizedSearch = debouncedSearch.toLowerCase().replace(/[^a-zA-Z0-9]/g, '');
+    
+    // Try both original and normalized search
+    const originalResults = fuse.search(debouncedSearch) as FuseResult<Schedule>[];
+    const normalizedResults = normalizedSearch !== debouncedSearch.toLowerCase() 
+      ? fuse.search(normalizedSearch) as FuseResult<Schedule>[]
+      : [];
+    
+    // Combine and deduplicate results
+    const combinedResults = [...originalResults, ...normalizedResults];
+    const uniqueResults = combinedResults.filter((result, index, self) =>
+      index === self.findIndex(r => r.item.subjectSchedId === result.item.subjectSchedId)
+    );
+    
+    return uniqueResults;
   }, [debouncedSearch, fuse, schedules]);
 
   // Fetch filter options on component mount
@@ -346,11 +378,13 @@ export default function ClassSchedulesPage() {
       ),
       accessor: 'select',
       className: 'w-12 text-center',
+      headerClassName: "justify-center",
     },
     {
       header: '',
       accessor: 'expander',
       className: 'w-12 text-center',
+      headerClassName: "justify-center",
       expandedContent: (schedule: Schedule) => {
         const scheduleIdStr = schedule.subjectSchedId.toString();
         const students = scheduleStudents[scheduleIdStr] || [];
@@ -426,6 +460,7 @@ export default function ClassSchedulesPage() {
       header: 'Subject',
       accessor: 'subject',
       className: 'text-center min-w-[100px]',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => {
         const fuseResult = fuzzyResults.find(r => r.item.subjectSchedId === item.subjectSchedId) as FuseResult<Schedule> | undefined;
@@ -451,6 +486,7 @@ export default function ClassSchedulesPage() {
       header: 'Section',
       accessor: 'section',
       className: 'text-center min-w-[80px]',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => (
         <span className="text-sm text-blue-900 text-center truncate block" title={item.section.sectionName}>{item.section.sectionName}</span>
@@ -460,6 +496,7 @@ export default function ClassSchedulesPage() {
       header: 'Instructor',
       accessor: 'instructor',
       className: 'text-center min-w-[120px]',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => {
         const fuseResult = fuzzyResults.find(r => r.item.subjectSchedId === item.subjectSchedId) as FuseResult<Schedule> | undefined;
@@ -491,6 +528,7 @@ export default function ClassSchedulesPage() {
       header: 'Room',
       accessor: 'room',
       className: 'text-center min-w-[80px]',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => (
         <div className="text-sm text-blue-900 text-center">
@@ -503,6 +541,7 @@ export default function ClassSchedulesPage() {
       header: 'Day',
       accessor: 'day',
       className: 'text-center',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => (
         <Badge variant="outline" className="text-center">{item.day}</Badge>
@@ -512,6 +551,7 @@ export default function ClassSchedulesPage() {
       header: 'Time',
       accessor: 'time',
       className: 'text-center',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => (
         <div className="flex items-center justify-center">
@@ -523,6 +563,7 @@ export default function ClassSchedulesPage() {
       header: 'Type',
       accessor: 'scheduleType',
       className: 'text-center',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => (
         <Badge variant={item.scheduleType === 'Regular' ? 'default' : 'secondary'} className="text-center">
@@ -534,6 +575,7 @@ export default function ClassSchedulesPage() {
       header: 'Status',
       accessor: 'status',
       className: 'text-center',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => (
         <Badge variant={item.status === 'Active' ? 'default' : 'destructive'} className="text-center">
@@ -545,6 +587,7 @@ export default function ClassSchedulesPage() {
       header: 'Enrollment',
       accessor: 'enrollment',
       className: 'text-center',
+      headerClassName: "justify-center",
       sortable: true,
       render: (item: Schedule) => (
         <div className="flex items-center gap-2 justify-center">
@@ -562,6 +605,7 @@ export default function ClassSchedulesPage() {
       header: "Actions",
       accessor: "actions",
       className: "text-center",
+      headerClassName: "justify-center",
       render: (item: Schedule) => (
         <div className="flex gap-1 justify-center">
           <Button
@@ -1189,6 +1233,107 @@ export default function ClassSchedulesPage() {
     search !== ''
   ].filter(Boolean).length;
 
+  // Build filters object for FilterChips component
+  const filters = useMemo(() => ({
+    status: statusFilter !== 'all' ? [statusFilter] : [],
+    semester: semesterFilter !== 'all' ? [semesterFilter] : [],
+    day: dayFilter !== 'all' ? [dayFilter] : [],
+    instructor: instructorFilter !== 'all' ? [instructorFilter] : [],
+    room: roomFilter !== 'all' ? [roomFilter] : [],
+    subject: subjectFilter !== 'all' ? [subjectFilter] : [],
+    scheduleType: scheduleTypeFilter !== 'all' ? [scheduleTypeFilter] : [],
+    academicYear: academicYearFilter !== 'all' ? [academicYearFilter] : [],
+    section: sectionFilter !== 'all' ? [sectionFilter] : [],
+    department: departmentFilter !== 'all' ? [departmentFilter] : [],
+    timeRange: timeRangeFilter !== 'all' ? [timeRangeFilter] : [],
+    enrollment: enrollmentFilter !== 'all' ? [enrollmentFilter] : [],
+    building: buildingFilter !== 'all' ? [buildingFilter] : [],
+    floor: floorFilter !== 'all' ? [floorFilter] : [],
+    roomType: roomTypeFilter !== 'all' ? [roomTypeFilter] : [],
+  }), [statusFilter, semesterFilter, dayFilter, instructorFilter, roomFilter, subjectFilter, scheduleTypeFilter, academicYearFilter, sectionFilter, departmentFilter, timeRangeFilter, enrollmentFilter, buildingFilter, floorFilter, roomTypeFilter]);
+
+  // Handler to remove individual filter
+  const handleRemoveFilter = (key: string, value?: string) => {
+    switch (key) {
+      case 'status':
+        setStatusFilter('all');
+        break;
+      case 'semester':
+        setSemesterFilter('all');
+        break;
+      case 'day':
+        setDayFilter('all');
+        break;
+      case 'instructor':
+        setInstructorFilter('all');
+        setInstructorSearch('');
+        break;
+      case 'room':
+        setRoomFilter('all');
+        setRoomSearch('');
+        break;
+      case 'subject':
+        setSubjectFilter('all');
+        setSubjectSearch('');
+        break;
+      case 'scheduleType':
+        setScheduleTypeFilter('all');
+        break;
+      case 'academicYear':
+        setAcademicYearFilter('all');
+        break;
+      case 'section':
+        setSectionFilter('all');
+        setSectionSearch('');
+        break;
+      case 'department':
+        setDepartmentFilter('all');
+        break;
+      case 'timeRange':
+        setTimeRangeFilter('all');
+        break;
+      case 'enrollment':
+        setEnrollmentFilter('all');
+        break;
+      case 'building':
+        setBuildingFilter('all');
+        break;
+      case 'floor':
+        setFloorFilter('all');
+        break;
+      case 'roomType':
+        setRoomTypeFilter('all');
+        break;
+    }
+  };
+
+  // Handler to clear all filters
+  const handleClearAllFilters = () => {
+    setStatusFilter('all');
+    setSemesterFilter('all');
+    setDayFilter('all');
+    setInstructorFilter('all');
+    setRoomFilter('all');
+    setSubjectFilter('all');
+    setScheduleTypeFilter('all');
+    setAcademicYearFilter('all');
+    setSectionFilter('all');
+    setDepartmentFilter('all');
+    setTimeRangeFilter('all');
+    setEnrollmentFilter('all');
+    setBuildingFilter('all');
+    setFloorFilter('all');
+    setRoomTypeFilter('all');
+    setInstructorSearch('');
+    setRoomSearch('');
+    setSubjectSearch('');
+    setSectionSearch('');
+    setSearch('');
+    setSearchInput('');
+  };
+
+  const hasActiveFilters = activeFiltersCount > 0;
+
 
   return (
     <>
@@ -1515,7 +1660,7 @@ export default function ClassSchedulesPage() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search schedules..."
+                    placeholder="Search by subject, section, instructor, room, time, day, year..."
                     value={searchInput}
                     onChange={e => {
                       setSearchInput(e.target.value);
@@ -1737,32 +1882,7 @@ export default function ClassSchedulesPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        // Clear all primary filters
-                        setStatusFilter("all");
-                        setSemesterFilter("all");
-                        setDayFilter("all");
-                        setInstructorFilter("all");
-                        setRoomFilter("all");
-                        setSubjectFilter("all");
-                        // Clear all advanced filters
-                        setScheduleTypeFilter("all");
-                        setAcademicYearFilter("all");
-                        setSectionFilter("all");
-                        setDepartmentFilter("all");
-                        setTimeRangeFilter("all");
-                        setEnrollmentFilter("all");
-                        setBuildingFilter("all");
-                        setFloorFilter("all");
-                        setRoomTypeFilter("all");
-                        // Clear all search states
-                        setInstructorSearch("");
-                        setRoomSearch("");
-                        setSubjectSearch("");
-                        setSectionSearch("");
-                        // Clear main search
-                        setSearch("");
-                      }}
+                      onClick={handleClearAllFilters}
                       className={`text-xs text-gray-500 hover:text-gray-700 h-6 px-2 flex items-center gap-1 ${activeFiltersCount > 0 ? 'text-blue-600 hover:text-blue-800' : ''}`}
                       disabled={activeFiltersCount === 0}
                     >
@@ -1914,6 +2034,59 @@ export default function ClassSchedulesPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+              )}
+
+              {/* Active Filter Chips */}
+              {hasActiveFilters && (
+                <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm mb-2">
+                    <div className="flex items-center gap-2">
+                      <Filter className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <span className="font-medium text-blue-900">Active Filters:</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-blue-700">
+                      <span>{schedules.length} of {total} schedules</span>
+                      <button
+                        type="button"
+                        onClick={handleClearAllFilters}
+                        disabled={!hasActiveFilters}
+                        className={`text-xs px-2 py-1 rounded border ${hasActiveFilters ? 'border-blue-300 text-blue-700 hover:bg-blue-100' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}
+                        aria-disabled={!hasActiveFilters}
+                        title={hasActiveFilters ? 'Clear all filters' : 'No active filters'}
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  </div>
+                  <FilterChips
+                    filters={filters}
+                    fields={[
+                      { key: 'status', label: 'Status' },
+                      { key: 'semester', label: 'Semester' },
+                      { key: 'day', label: 'Day' },
+                      { key: 'instructor', label: 'Instructor' },
+                      { key: 'room', label: 'Room' },
+                      { key: 'subject', label: 'Subject' },
+                      { key: 'scheduleType', label: 'Type' },
+                      { key: 'academicYear', label: 'Academic Year' },
+                      { key: 'section', label: 'Section' },
+                      { key: 'department', label: 'Department' },
+                      { key: 'timeRange', label: 'Time Range' },
+                      { key: 'enrollment', label: 'Enrollment' },
+                      { key: 'building', label: 'Building' },
+                      { key: 'floor', label: 'Floor' },
+                      { key: 'roomType', label: 'Room Type' },
+                    ]}
+                    onRemove={handleRemoveFilter}
+                    onClearAll={handleClearAllFilters}
+                    searchQuery={search}
+                    onRemoveSearch={() => {
+                      setSearch('');
+                      setSearchInput('');
+                    }}
+                    showSearchChip={true}
+                  />
                 </div>
               )}
             </div>

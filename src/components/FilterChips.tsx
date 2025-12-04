@@ -51,14 +51,6 @@ export const FilterChips: React.FC<FilterChipsProps> = ({
       {headerContent && (
         <div className="flex items-center justify-between mb-2">
           {headerContent}
-          <Button 
-            size="sm" 
-            variant="outline" 
-            className="px-2 py-1 text-xs border-blue-200 text-blue-700 rounded-xl hover:bg-blue-600 hover:text-white hover:border-blue-600" 
-            onClick={onClearAll}
-          >
-            Clear All
-          </Button>
         </div>
       )}
       

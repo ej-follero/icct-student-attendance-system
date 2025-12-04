@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PageSkeleton } from "@/components/reusable/Skeleton";
 import { 
   Calendar, 
@@ -13,11 +13,11 @@ import {
   AlertTriangle, 
   Clock, 
   Users, 
+  User,
   MapPin, 
   CheckCircle, 
   XCircle, 
   Search,
-  Bell,
   Settings,
   FileText,
   CalendarDays,
@@ -31,7 +31,9 @@ import {
   Archive,
   RefreshCw,
   BarChart2,
-  Printer
+  Printer,
+  X,
+  Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,13 +44,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TablePagination } from '@/components/reusable/Table/TablePagination';
+import { FilterChips } from '@/components/FilterChips';
 import PageHeader from '@/components/PageHeader/PageHeader';
+import SummaryCard from '@/components/SummaryCard';
+import { QuickActionsPanel } from '@/components/reusable/QuickActionsPanel/QuickActionsPanel';
+import ImportDialog from "@/components/reusable/Dialogs/ImportDialog";
+import { ExportDialog } from "@/components/reusable/Dialogs/ExportDialog";
 
 // Types
 interface AcademicEvent {
@@ -235,14 +244,38 @@ function CalendarView({ events, currentDate, viewMode, selectedEvents, onEventSe
                         </div>
                       )}
                       <div className="flex items-center gap-1 mt-1">
-                        <div className={`w-1.5 h-1.5 rounded-full ${
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className={`w-1.5 h-1.5 rounded-full cursor-help ${
                           event.status === 'published' ? 'bg-green-500' : 
                           event.status === 'draft' ? 'bg-yellow-500' : 'bg-red-500'
                         }`}></div>
-                        <span className="text-xs opacity-75">
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>
+                                {event.status === 'published' ? 'Published' : 
+                                 event.status === 'draft' ? 'Draft' : 'Cancelled'}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-xs opacity-75 cursor-help">
                           {event.priority === 'critical' ? '🔴' : 
                            event.priority === 'high' ? '🟡' : '🟢'}
                         </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>
+                                {event.priority === 'critical' ? 'Critical Priority' : 
+                                 event.priority === 'high' ? 'High Priority' : 'Medium/Low Priority'}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
                     </div>
                   ))}
@@ -283,8 +316,8 @@ function CalendarView({ events, currentDate, viewMode, selectedEvents, onEventSe
           <div className="w-16"></div> {/* Empty corner */}
           {weekDays.map(day => (
             <div key={day.toDateString()} className="p-2 text-center text-sm font-medium border-b">
-              <div>{day.toLocaleDateString([], { weekday: 'short' })}</div>
-              <div className={`text-lg ${day.toDateString() === new Date().toDateString() ? 'text-blue-600' : ''}`}>
+              <div className="text-gray-600">{day.toLocaleDateString([], { weekday: 'short' })}</div>
+              <div className={`text-lg ${day.toDateString() === new Date().toDateString() ? 'text-blue-600' : 'text-gray-600'}`}>
                 {day.getDate()}
               </div>
             </div>
@@ -300,11 +333,17 @@ function CalendarView({ events, currentDate, viewMode, selectedEvents, onEventSe
                   const eventDate = new Date(event.startDate);
                   const eventHour = eventDate.getHours();
                   return eventDate.toDateString() === day.toDateString() && eventHour === hour;
-                });
+                }).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
 
                 return (
                   <div key={`${day.toDateString()}-${hour}`} className="min-h-[60px] border-b border-r relative">
-                    {dayEvents.map(event => (
+                    {dayEvents.map((event, index) => {
+                      const eventDate = new Date(event.startDate);
+                      const minutes = eventDate.getMinutes();
+                      // Calculate top position: base offset from minutes within the hour + index offset for overlapping events
+                      const topOffset = (minutes / 60) * 60 + (index * 50); // 50px per overlapping event
+                      
+                      return (
                       <div
                         key={event.id}
                         className={`absolute left-1 right-1 p-1 text-xs rounded cursor-pointer ${
@@ -312,7 +351,12 @@ function CalendarView({ events, currentDate, viewMode, selectedEvents, onEventSe
                             ? 'ring-2 ring-blue-500' 
                             : ''
                         }`}
-                        style={{ backgroundColor: event.color + '20', color: event.color }}
+                          style={{ 
+                            backgroundColor: event.color + '20', 
+                            color: event.color,
+                            top: `${topOffset}px`,
+                            zIndex: 10 + index
+                          }}
                         onClick={() => onEventSelect(event.id)}
                       >
                         <div className="font-medium truncate">{event.title}</div>
@@ -320,7 +364,8 @@ function CalendarView({ events, currentDate, viewMode, selectedEvents, onEventSe
                           {formatTime(new Date(event.startDate))}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -356,7 +401,7 @@ function CalendarView({ events, currentDate, viewMode, selectedEvents, onEventSe
       <div className="calendar-day">
         {/* Day Header */}
         <div className="mb-6 p-4 bg-gray-50 rounded">
-          <h3 className="text-xl font-semibold text-gray-900">
+          <h3 className="text-xl font-semibold text-blue-600">
             {currentDate.toLocaleDateString([], { 
               weekday: 'long', 
               year: 'numeric', 
@@ -426,32 +471,64 @@ function CalendarView({ events, currentDate, viewMode, selectedEvents, onEventSe
         {/* Time-based Events */}
         <div className="relative">
           <h4 className="text-sm font-medium text-gray-700 mb-3">Scheduled Events</h4>
-          <div className="grid grid-cols-1 gap-1">
+          <div className="space-y-2">
             {timeSlots.map(hour => {
+              // Get all events that start in this hour
               const hourEvents = timedEvents.filter(event => {
                 const eventHour = new Date(event.startDate).getHours();
                 return eventHour === hour;
-              });
+              }).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
 
+              // Group events by their exact start time (hour + minutes)
+              const eventsByTime = hourEvents.reduce((acc, event) => {
+                const eventDate = new Date(event.startDate);
+                const timeKey = `${eventDate.getHours()}:${String(eventDate.getMinutes()).padStart(2, '0')}`;
+                if (!acc[timeKey]) {
+                  acc[timeKey] = [];
+                }
+                acc[timeKey].push(event);
+                return acc;
+              }, {} as Record<string, typeof hourEvents>);
+
+              // Get unique time slots for this hour
+              const timeKeys = Object.keys(eventsByTime).sort();
+
+              if (timeKeys.length === 0) {
               return (
                 <div key={hour} className="flex">
                   <div className="w-20 p-2 text-sm text-gray-500 text-right border-r border-gray-200">
                     {hour}:00
                   </div>
-                  <div className="flex-1 min-h-[60px] border-b border-gray-200 relative">
-                    {hourEvents.map(event => (
+                    <div className="flex-1 min-h-[60px] border-b border-gray-200"></div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={hour} className="space-y-2">
+                  {timeKeys.map(timeKey => {
+                    const eventsAtTime = eventsByTime[timeKey];
+                    const [hours, minutes] = timeKey.split(':');
+                    const displayTime = `${hours}:${minutes.padStart(2, '0')}`;
+
+                    return (
+                      <div key={timeKey} className="flex">
+                        <div className="w-20 p-2 text-sm text-gray-500 text-right border-r border-gray-200">
+                          {displayTime}
+                        </div>
+                        <div className="flex-1 min-h-[60px] border-b border-gray-200">
+                          <div className="flex gap-2 p-2">
+                            {eventsAtTime.map((event) => (
                       <div
                         key={event.id}
-                        className={`absolute left-2 right-2 p-3 rounded cursor-pointer shadow-sm ${
+                                className={`flex-1 p-3 rounded cursor-pointer shadow-sm ${
                           selectedEvents.includes(event.id) 
                             ? 'ring-2 ring-blue-500' 
                             : 'hover:shadow-md'
                         }`}
                         style={{ 
                           backgroundColor: event.color + '20', 
-                          color: event.color,
-                          top: '4px',
-                          bottom: '4px'
+                                  color: event.color
                         }}
                         onClick={() => onEventSelect(event.id)}
                       >
@@ -479,17 +556,27 @@ function CalendarView({ events, currentDate, viewMode, selectedEvents, onEventSe
                             )}
                           </div>
                           <div className="flex items-center gap-1 ml-2">
-                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => onEventSelect(event.id)}>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={(e) => {
+                                      e.stopPropagation();
+                                      onEventSelect(event.id);
+                                    }}>
                               <Eye className="w-3 h-3" />
                             </Button>
-                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => onEventSelect(event.id)}>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={(e) => {
+                                      e.stopPropagation();
+                                      onEventSelect(event.id);
+                                    }}>
                               <Edit className="w-3 h-3" />
                             </Button>
                           </div>
                         </div>
                       </div>
                     ))}
+                          </div>
                   </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -602,15 +689,24 @@ function FilterPanel({
   onFiltersChange
 }: FilterPanelProps) {
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="text-lg">Filter & Search</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <Card className="mb-6 overflow-hidden p-0">
+      {/* Gradient Header */}
+      <div className="bg-gradient-to-r from-[#1e40af] to-[#3b82f6] p-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 flex items-center justify-center">
+            <Filter className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-white">Filter & Search</h3>
+            <p className="text-blue-100 text-sm">Refine your event search</p>
+          </div>
+        </div>
+      </div>
+      <CardContent className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4">
           {/* Search */}
           <div className="lg:col-span-3">
-            <Label htmlFor="search">Search Events</Label>
+            <Label htmlFor="search" className="text-gray-700">Search Events</Label>
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <Input
@@ -618,14 +714,14 @@ function FilterPanel({
                 placeholder="Search by title, description, or tags..."
                 value={search}
                 onChange={(e) => onSearchChange(e.target.value)}
-                className="pl-10"
+                className="pl-10 rounded"
               />
             </div>
           </div>
           
           {/* Academic Year */}
           <div className="lg:col-span-2">
-            <Label htmlFor="academicYear">Academic Year</Label>
+            <Label htmlFor="academicYear" className="text-gray-700">Academic Year</Label>
             <Select 
               value={selectedYear?.id.toString()} 
               onValueChange={(value) => {
@@ -634,7 +730,7 @@ function FilterPanel({
                 onSemesterChange(year?.semesters[0] || null);
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="rounded text-gray-600">
                 <SelectValue placeholder="Select academic year" />
               </SelectTrigger>
               <SelectContent>
@@ -649,7 +745,7 @@ function FilterPanel({
           
           {/* Semester */}
           <div className="lg:col-span-2">
-            <Label htmlFor="semester">Semester</Label>
+            <Label htmlFor="semester" className="text-gray-700">Semester</Label>
             <Select 
               value={selectedSemester?.id.toString()} 
               onValueChange={(value) => {
@@ -657,7 +753,7 @@ function FilterPanel({
                 onSemesterChange(semester || null);
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="rounded text-gray-600">
                 <SelectValue placeholder="Select semester" />
               </SelectTrigger>
               <SelectContent>
@@ -672,9 +768,9 @@ function FilterPanel({
           
           {/* Category */}
           <div className="lg:col-span-1">
-            <Label htmlFor="category">Category</Label>
+            <Label htmlFor="category" className="text-gray-700">Category</Label>
             <Select value={filters.category} onValueChange={(value) => onFiltersChange({ ...filters, category: value })}>
-              <SelectTrigger>
+              <SelectTrigger className="rounded text-gray-600">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
@@ -688,9 +784,9 @@ function FilterPanel({
           
           {/* Priority */}
           <div className="lg:col-span-1">
-            <Label htmlFor="priority">Priority</Label>
+            <Label htmlFor="priority" className="text-gray-700">Priority</Label>
             <Select value={filters.priority} onValueChange={(value) => onFiltersChange({ ...filters, priority: value })}>
-              <SelectTrigger>
+              <SelectTrigger className="rounded text-gray-600">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
@@ -704,9 +800,9 @@ function FilterPanel({
           
           {/* Status */}
           <div className="lg:col-span-1">
-            <Label htmlFor="status">Status</Label>
+            <Label htmlFor="status" className="text-gray-700">Status</Label>
             <Select value={filters.status} onValueChange={(value) => onFiltersChange({ ...filters, status: value })}>
-              <SelectTrigger>
+              <SelectTrigger className="rounded text-gray-600">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
@@ -720,9 +816,9 @@ function FilterPanel({
           
           {/* Date Range */}
           <div className="lg:col-span-2">
-            <Label htmlFor="dateRange">Date Range</Label>
+            <Label htmlFor="dateRange" className="text-gray-700">Date Range</Label>
             <Select value={filters.dateRange} onValueChange={(value) => onFiltersChange({ ...filters, dateRange: value })}>
-              <SelectTrigger>
+              <SelectTrigger className="rounded text-gray-600">
                 <SelectValue placeholder="All dates" />
               </SelectTrigger>
               <SelectContent>
@@ -775,13 +871,18 @@ export default function AcademicCalendarPage() {
   const [selectedEvents, setSelectedEvents] = useState<number[]>([]);
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
-  const [showExportDialog, setShowExportDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [notifications, setNotifications] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<AcademicEvent | null>(null);
   const [showEventDetails, setShowEventDetails] = useState(false);
   const [showEditEvent, setShowEditEvent] = useState(false);
+  
+  // Pagination state for list and timeline views
+  const [listPage, setListPage] = useState(1);
+  const [listItemsPerPage, setListItemsPerPage] = useState(10);
+  const [timelinePage, setTimelinePage] = useState(1);
+  const [timelineItemsPerPage, setTimelineItemsPerPage] = useState(10);
   
   // Add Event form state
   const [newEvent, setNewEvent] = useState({
@@ -798,13 +899,34 @@ export default function AcademicCalendarPage() {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   
-  // Import/Export state
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importProgress, setImportProgress] = useState(0);
-  const [isImporting, setIsImporting] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx' | 'pdf' | 'ical'>('csv');
-  const [isExporting, setIsExporting] = useState(false);
+  // Edit Event form state
+  const [editEvent, setEditEvent] = useState<{
+    title: string;
+    description: string;
+    category: 'academic' | 'administrative' | 'holiday' | 'special' | 'deadline';
+    priority: 'low' | 'medium' | 'high' | 'critical';
+    startDate: string;
+    endDate: string;
+    location: string;
+    allDay: boolean;
+    recurring: boolean;
+    requiresApproval: boolean;
+  }>({
+    title: '',
+    description: '',
+    category: 'academic',
+    priority: 'medium',
+    startDate: '',
+    endDate: '',
+    location: '',
+    allDay: false,
+    recurring: false,
+    requiresApproval: false
+  });
+  const [editFormErrors, setEditFormErrors] = useState<Record<string, string>>({});
   
+  // Import/Export state
+  const [showExportDialog, setShowExportDialog] = useState(false);
   // Settings state
   const [settings, setSettings] = useState({
     notifications: {
@@ -1132,6 +1254,89 @@ export default function AcademicCalendarPage() {
     search
   });
 
+  // Paginated events for list view
+  const paginatedListEvents = useMemo(() => {
+    const startIndex = (listPage - 1) * listItemsPerPage;
+    const endIndex = startIndex + listItemsPerPage;
+    return filteredEvents.slice(startIndex, endIndex);
+  }, [filteredEvents, listPage, listItemsPerPage]);
+
+  // Paginated events for timeline view
+  const paginatedTimelineEvents = useMemo(() => {
+    const startIndex = (timelinePage - 1) * timelineItemsPerPage;
+    const endIndex = startIndex + timelineItemsPerPage;
+    return filteredEvents.slice(startIndex, endIndex);
+  }, [filteredEvents, timelinePage, timelineItemsPerPage]);
+
+  // Reset pagination when filters or search change
+  useEffect(() => {
+    setListPage(1);
+    setTimelinePage(1);
+  }, [filters, search]);
+
+  // Format filter values for display in chips
+  const formatFilterDisplay = (key: string, value: string): string => {
+    if (value === 'all') return '';
+    
+    switch (key) {
+      case 'category':
+        return EVENT_CATEGORIES[value as keyof typeof EVENT_CATEGORIES]?.label || value;
+      case 'priority':
+        return PRIORITY_LEVELS[value as keyof typeof PRIORITY_LEVELS]?.label || value;
+      case 'status':
+        return value.charAt(0).toUpperCase() + value.slice(1);
+      case 'dateRange':
+        const rangeMap: Record<string, string> = {
+          'today': 'Today',
+          'week': 'This Week',
+          'month': 'This Month',
+          'semester': 'This Semester'
+        };
+        return rangeMap[value] || value;
+      default:
+        return value;
+    }
+  };
+
+  // Convert filters to format expected by FilterChips
+  const filtersForChips = useMemo(() => {
+    const chips: Record<string, string[]> = {};
+    
+    if (filters.category !== 'all') {
+      chips.category = [formatFilterDisplay('category', filters.category)];
+    }
+    if (filters.priority !== 'all') {
+      chips.priority = [formatFilterDisplay('priority', filters.priority)];
+    }
+    if (filters.status !== 'all') {
+      chips.status = [formatFilterDisplay('status', filters.status)];
+    }
+    if (filters.dateRange !== 'all') {
+      chips.dateRange = [formatFilterDisplay('dateRange', filters.dateRange)];
+    }
+    if (selectedYear) {
+      chips.academicYear = [selectedYear.name];
+    }
+    if (selectedSemester) {
+      chips.semester = [selectedSemester.name];
+    }
+    
+    return chips;
+  }, [filters, selectedYear, selectedSemester]);
+
+  // Handle clearing all filters
+  const handleClearFilters = () => {
+    setFilters({
+      category: 'all',
+      priority: 'all',
+      status: 'all',
+      dateRange: 'all',
+    });
+    setSearch('');
+    setSelectedYear(null);
+    setSelectedSemester(null);
+  };
+
   const handleAddEvent = () => {
     setShowAddEvent(true);
   };
@@ -1240,7 +1445,8 @@ export default function AcademicCalendarPage() {
     const today = new Date();
     const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
     
-    return filteredEvents
+    // Use raw events array instead of filteredEvents to show all upcoming events regardless of filters
+    return events
       .filter(event => event.startDate >= today && event.startDate <= nextWeek)
       .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
       .slice(0, 5);
@@ -1292,6 +1498,23 @@ export default function AcademicCalendarPage() {
 
   const handleEditEvent = (event: AcademicEvent) => {
     setSelectedEvent(event);
+    // Populate edit form with event data
+    const startDateStr = new Date(event.startDate).toISOString().slice(0, 16);
+    const endDateStr = event.endDate ? new Date(event.endDate).toISOString().slice(0, 16) : '';
+    
+    setEditEvent({
+      title: event.title || '',
+      description: event.description || '',
+      category: event.category as 'academic' | 'administrative' | 'holiday' | 'special' | 'deadline',
+      priority: event.priority as 'low' | 'medium' | 'high' | 'critical',
+      startDate: startDateStr,
+      endDate: endDateStr,
+      location: event.location || '',
+      allDay: event.allDay,
+      recurring: event.isRecurring,
+      requiresApproval: event.requiresApproval
+    });
+    setEditFormErrors({});
     setShowEditEvent(true);
   };
 
@@ -1324,6 +1547,10 @@ export default function AcademicCalendarPage() {
     
     if (!newEvent.title.trim()) {
       errors.title = 'Event title is required';
+    }
+    
+    if (!newEvent.description.trim()) {
+      errors.description = 'Description is required';
     }
     
     if (!newEvent.startDate) {
@@ -1364,13 +1591,32 @@ export default function AcademicCalendarPage() {
     }
 
     try {
+      // Handle all-day events: set time to start/end of day
+      let eventDate: string;
+      let endDate: string | null;
+      
+      if (newEvent.allDay) {
+        // For all-day events, set start to 00:00:00 and end to 23:59:59
+        const start = new Date(newEvent.startDate);
+        start.setHours(0, 0, 0, 0);
+        eventDate = start.toISOString();
+        
+        const end = newEvent.endDate ? new Date(newEvent.endDate) : new Date(newEvent.startDate);
+        end.setHours(23, 59, 59, 999);
+        endDate = end.toISOString();
+      } else {
+        // For timed events, ensure proper ISO format
+        eventDate = new Date(newEvent.startDate).toISOString();
+        endDate = newEvent.endDate ? new Date(newEvent.endDate).toISOString() : null;
+      }
+
       const eventData = {
-        title: newEvent.title,
-        description: newEvent.description,
+        title: newEvent.title.trim(),
+        description: newEvent.description.trim(),
         eventType: mapCategoryToEventType(newEvent.category),
-        eventDate: newEvent.startDate,
-        endDate: newEvent.endDate,
-        location: newEvent.location,
+        eventDate: eventDate,
+        endDate: endDate,
+        location: newEvent.location.trim() || null,
         priority: mapPriorityToDbLevel(newEvent.priority),
         isPublic: true,
         requiresRegistration: newEvent.requiresApproval,
@@ -1460,113 +1706,206 @@ export default function AcademicCalendarPage() {
     setFormErrors({});
   };
 
-  // Import functionality
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setImportFile(file);
+  // Edit form validation
+  const validateEditForm = () => {
+    const errors: Record<string, string> = {};
+    
+    if (!editEvent.title.trim()) {
+      errors.title = 'Event title is required';
     }
-  };
-
-  const parseCSV = (csvText: string): AcademicEvent[] => {
-    const lines = csvText.split('\n');
-    const headers = lines[0].split(',').map(h => h.trim());
-    const events: AcademicEvent[] = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      if (lines[i].trim()) {
-        const values = lines[i].split(',').map(v => v.trim());
-        const event: AcademicEvent = {
-          id: Date.now() + i,
-          title: values[0] || '',
-          description: values[1] || '',
-          startDate: new Date(values[2] || new Date()),
-          endDate: new Date(values[3] || new Date()),
-          allDay: values[4] === 'true',
-          category: (values[5] as any) || 'academic',
-          priority: (values[6] as any) || 'medium',
-          location: values[7] || '',
-          attendees: values[8] ? values[8].split(';') : [],
-          isRecurring: values[9] === 'true',
-          recurrencePattern: values[10] || undefined,
-          status: 'draft',
-          createdBy: 'Imported User',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          requiresApproval: values[11] === 'true',
-          color: getEventColor((values[5] as any) || 'academic'),
-          tags: values[12] ? values[12].split(';') : []
-        };
-        events.push(event);
+    
+    if (!editEvent.description.trim()) {
+      errors.description = 'Description is required';
+    }
+    
+    if (!editEvent.startDate) {
+      errors.startDate = 'Start date is required';
+    }
+    
+    if (!editEvent.endDate) {
+      errors.endDate = 'End date is required';
+    }
+    
+    if (editEvent.startDate && editEvent.endDate) {
+      const startDate = new Date(editEvent.startDate);
+      const endDate = new Date(editEvent.endDate);
+      
+      if (endDate <= startDate) {
+        errors.endDate = 'End date must be after start date';
       }
     }
-    return events;
+    
+    setEditFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
-  const handleImport = async () => {
-    if (!importFile) {
-      toast.error('Please select a file to import');
+  // Handle edit form input changes
+  const handleEditFormChange = (field: string, value: any) => {
+    setEditEvent(prev => ({ ...prev, [field]: value }));
+    // Clear error when user starts typing
+    if (editFormErrors[field]) {
+      setEditFormErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  // Handle edit form submission
+  const handleEditEventSubmit = async () => {
+    if (!validateEditForm()) {
+      toast.error('Please fix the form errors');
       return;
     }
 
-    setIsImporting(true);
-    setImportProgress(0);
+    if (!selectedEvent) return;
 
     try {
-      const text = await importFile.text();
-      const importedEvents = parseCSV(text);
+      // Handle all-day events: set time to start/end of day
+      let eventDate: string;
+      let endDate: string | null;
       
-      // Create events in database
-      const createPromises = importedEvents.map(async (event, index) => {
-        // Update progress
-        setImportProgress(Math.round(((index + 1) / importedEvents.length) * 100));
+      if (editEvent.allDay) {
+        // For all-day events, set start to 00:00:00 and end to 23:59:59
+        const start = new Date(editEvent.startDate);
+        start.setHours(0, 0, 0, 0);
+        eventDate = start.toISOString();
         
-        const eventData = {
-          title: event.title,
-          description: event.description,
-          eventType: mapCategoryToEventType(event.category),
-          eventDate: event.startDate.toISOString(),
-          endDate: event.endDate.toISOString(),
-          location: event.location,
-          priority: mapPriorityToDbLevel(event.priority),
-          isPublic: true,
-          requiresRegistration: event.requiresApproval,
-          capacity: null,
-          imageUrl: null,
-          contactEmail: null,
-          contactPhone: null
+        const end = editEvent.endDate ? new Date(editEvent.endDate) : new Date(editEvent.startDate);
+        end.setHours(23, 59, 59, 999);
+        endDate = end.toISOString();
+      } else {
+        // For timed events, ensure proper ISO format
+        eventDate = new Date(editEvent.startDate).toISOString();
+        endDate = editEvent.endDate ? new Date(editEvent.endDate).toISOString() : null;
+      }
+
+      const eventData = {
+        title: editEvent.title.trim(),
+        description: editEvent.description.trim(),
+        eventType: mapCategoryToEventType(editEvent.category),
+        eventDate: eventDate,
+        endDate: endDate,
+        location: editEvent.location.trim() || null,
+        priority: mapPriorityToDbLevel(editEvent.priority),
+        isPublic: true,
+        requiresRegistration: editEvent.requiresApproval,
+        capacity: null,
+        imageUrl: null,
+        contactEmail: null,
+        contactPhone: null
+      };
+
+      const response = await fetch(`/api/events/${selectedEvent.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': 'ADMIN', // TODO: Get from auth context
+          'x-user-id': '1' // TODO: Get from auth context
+        },
+        body: JSON.stringify(eventData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update event');
+      }
+
+      // Reload events to get updated data
+      await loadEvents();
+      toast.success("Event updated successfully");
+      setShowEditEvent(false);
+    } catch (error) {
+      console.error('Error updating event:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update event');
+    }
+  };
+
+  // Reset edit form when dialog closes
+  const handleEditEventClose = () => {
+    setShowEditEvent(false);
+    setEditEvent({
+      title: '',
+      description: '',
+      category: 'academic',
+      priority: 'medium',
+      startDate: '',
+      endDate: '',
+      location: '',
+      allDay: false,
+      recurring: false,
+      requiresApproval: false
+    });
+    setEditFormErrors({});
+  };
+
+  // Import functionality using shared ImportDialog
+  // Matches the "events" ImportRecord shape from the shared ImportDialog
+  const handleEventsImport = async (
+    records: any[]
+  ): Promise<{ success: number; failed: number; errors: string[] }> => {
+    let success = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i];
+      try {
+        const startTime = record.startTime || "09:00";
+        const endTime = record.endTime || "10:00";
+
+        const eventStart = new Date(`${record.date}T${startTime}`);
+        const eventEnd = new Date(`${record.date}T${endTime}`);
+
+        if (isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
+          throw new Error("Invalid date or time");
+        }
+
+        const body = {
+          title: record.title,
+          description: record.description || "",
+          eventType: record.eventType || "LECTURE",
+          eventDate: eventStart.toISOString(),
+          endDate: eventEnd.toISOString(),
+          location: record.location || null,
+          priority: record.priority || "NORMAL",
+          isPublic: record.isPublic ?? true,
+          requiresRegistration: record.requiresRegistration ?? false,
+          capacity: record.capacity ?? null,
+          imageUrl: record.imageUrl ?? null,
+          contactEmail: record.contactEmail ?? null,
+          contactPhone: record.contactPhone ?? null,
         };
 
-        const response = await fetch('/api/events', {
-          method: 'POST',
+        const response = await fetch("/api/events", {
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            'x-user-role': 'ADMIN', // TODO: Get from auth context
-            'x-user-id': '1' // TODO: Get from auth context
+            "Content-Type": "application/json",
+            "x-user-role": "ADMIN", // TODO: Get from auth context
+            "x-user-id": "1", // TODO: Get from auth context
           },
-          body: JSON.stringify(eventData)
+          body: JSON.stringify(body),
         });
 
         if (!response.ok) {
-          console.error(`Failed to create event: ${event.title}`);
+          failed++;
+          const errorText = await response.text();
+          errors.push(`Row ${i + 1}: ${errorText || response.statusText}`);
+        } else {
+          success++;
         }
-      });
-
-      await Promise.all(createPromises);
-
-      // Reload events from database
-      await loadEvents();
-      
-      setShowImportDialog(false);
-      setImportFile(null);
-      setImportProgress(0);
-      toast.success(`${importedEvents.length} events imported successfully`);
-    } catch (error) {
-      console.error('Import error:', error);
-      toast.error('Failed to import events. Please check the file format.');
-    } finally {
-      setIsImporting(false);
+      } catch (err) {
+        failed++;
+        errors.push(
+          `Row ${i + 1}: ${
+            err instanceof Error ? err.message : "Unknown import error"
+          }`
+        );
+      }
     }
+
+    if (success > 0) {
+      await loadEvents();
+    }
+
+    return { success, failed, errors };
   };
 
   // Export functionality
@@ -1618,33 +1957,32 @@ export default function AcademicCalendarPage() {
     return ical;
   };
 
-  const handleExport = async () => {
-    setIsExporting(true);
-    
+  const handleExport = async (
+    format: 'pdf' | 'csv' | 'excel',
+    _options: { includeFilters: boolean; includeSummary: boolean }
+  ) => {
+    if (events.length === 0) {
+      toast.error('No events available to export');
+      return;
+    }
+
     try {
       let content = '';
       let mimeType = '';
       let fileExtension = '';
       
-      switch (exportFormat) {
+      switch (format) {
         case 'csv':
           content = generateCSV(events);
           mimeType = 'text/csv';
           fileExtension = 'csv';
           break;
-        case 'ical':
-          content = generateICal(events);
-          mimeType = 'text/calendar';
-          fileExtension = 'ics';
-          break;
-        case 'xlsx':
-          // For Excel, we'll use CSV format as a fallback
+        case 'excel':
           content = generateCSV(events);
           mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
           fileExtension = 'xlsx';
           break;
         case 'pdf':
-          // For PDF, we'll use CSV format as a fallback
           content = generateCSV(events);
           mimeType = 'application/pdf';
           fileExtension = 'pdf';
@@ -1662,12 +2000,10 @@ export default function AcademicCalendarPage() {
       URL.revokeObjectURL(url);
       
       setShowExportDialog(false);
-      toast.success(`Events exported to ${exportFormat.toUpperCase()} successfully`);
+      toast.success(`Events exported to ${format.toUpperCase()} successfully`);
     } catch (error) {
       console.error('Export error:', error);
       toast.error('Failed to export events');
-    } finally {
-      setIsExporting(false);
     }
   };
 
@@ -1725,12 +2061,6 @@ export default function AcademicCalendarPage() {
     };
     setSettings(defaultSettings);
     toast.success('Settings reset to defaults');
-  };
-
-  // Quick action handlers
-  const handleSetReminders = () => {
-    toast.info('Reminder settings will be available in the Settings dialog');
-    setShowSettings(true);
   };
 
   const handleShareCalendar = () => {
@@ -1848,154 +2178,41 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
 
 
 
-      {/* Database Status & Stats */}
-      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium text-blue-900">Database Connection Status</h3>
-            <p className="text-xs text-blue-700">
-              Events loaded: {events.length} | 
-              Filtered: {filteredEvents.length} | 
-              Academic Year: {selectedYear?.name || 'None'} | 
-              Semester: {selectedSemester?.name || 'None'}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${events.length > 0 ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-            <span className="text-xs text-blue-700">
-              {events.length > 0 ? 'Connected' : 'No data'}
-            </span>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={loadEvents}
-              disabled={eventsLoading}
-              className="ml-2"
-            >
-              <RefreshCw className={`w-3 h-3 ${eventsLoading ? 'animate-spin' : ''}`} />
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={async () => {
-                try {
-                  const testEvent = {
-                    title: 'Test Academic Event',
-                    description: 'This is a test event created to verify the calendar display',
-                    eventType: 'ACADEMIC',
-                    eventDate: new Date().toISOString(),
-                    endDate: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-                    location: 'Test Location',
-                    priority: 'NORMAL',
-                    isPublic: true,
-                    requiresRegistration: false,
-                    capacity: null,
-                    imageUrl: null,
-                    contactEmail: null,
-                    contactPhone: null
-                  };
-
-                  const response = await fetch('/api/events', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'x-user-role': 'ADMIN',
-                      'x-user-id': '1'
-                    },
-                    body: JSON.stringify(testEvent)
-                  });
-
-                  if (response.ok) {
-                    toast.success('Test event created successfully');
-                    await loadEvents(); // Reload events
-                  } else {
-                    const error = await response.text();
-                    toast.error(`Failed to create test event: ${error}`);
-                  }
-                } catch (error) {
-                  console.error('Error creating test event:', error);
-                  toast.error('Failed to create test event');
-                }
-              }}
-              className="ml-2"
-            >
-              Create Test Event
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={async () => {
-                try {
-                  const response = await fetch('/api/events');
-                  const data = await response.json();
-                  console.log('Database check - Raw API response:', data);
-                  toast.info(`Database has ${data.items?.length || 0} events`);
-                } catch (error) {
-                  console.error('Database check error:', error);
-                  toast.error('Failed to check database');
-                }
-              }}
-              className="ml-2"
-            >
-              Check DB
-            </Button>
-          </div>
-        </div>
-      </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Events</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">
-              All events
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Published</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.published}</div>
-            <p className="text-xs text-muted-foreground">
-              Active events
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.pending}</div>
-            <p className="text-xs text-muted-foreground">
-              Draft events
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Critical</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.critical}</div>
-            <p className="text-xs text-muted-foreground">
-              High priority
-            </p>
-          </CardContent>
-        </Card>
+        <SummaryCard
+          icon={<Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500/80" />}
+          label="Total Events"
+          value={stats.total}
+          valueClassName="text-blue-900"
+          sublabel="All events"
+          loading={loading}
+        />
+        <SummaryCard
+          icon={<CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500/80" />}
+          label="Published"
+          value={stats.published}
+          valueClassName="text-blue-900"
+          sublabel="Active events"
+          loading={loading}
+        />
+        <SummaryCard
+          icon={<Clock className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500/80" />}
+          label="Pending"
+          value={stats.pending}
+          valueClassName="text-blue-900"
+          sublabel="Draft events"
+          loading={loading}
+        />
+        <SummaryCard
+          icon={<AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500/80" />}
+          label="Critical"
+          value={stats.critical}
+          valueClassName="text-blue-900"
+          sublabel="High priority"
+          loading={loading}
+        />
       </div>
 
       {/* Filters & Search */}
@@ -2011,15 +2228,68 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
         onFiltersChange={setFilters}
       />
 
+      {/* Active Filter Chips */}
+      {(Object.values(filtersForChips).some(arr => arr.length > 0) || search.trim()) && (
+        <div className="mb-6 p-3 bg-blue-50 rounded border border-blue-200">
+          <FilterChips
+            filters={filtersForChips}
+            fields={[
+              { key: 'category', label: 'Category', allowIndividualRemoval: true },
+              { key: 'priority', label: 'Priority', allowIndividualRemoval: true },
+              { key: 'status', label: 'Status', allowIndividualRemoval: true },
+              { key: 'dateRange', label: 'Date Range', allowIndividualRemoval: true },
+              { key: 'academicYear', label: 'Academic Year', allowIndividualRemoval: true },
+              { key: 'semester', label: 'Semester', allowIndividualRemoval: true }
+            ]}
+            onRemove={(key, value) => {
+              switch (key) {
+                case 'category':
+                  setFilters({ ...filters, category: 'all' });
+                  break;
+                case 'priority':
+                  setFilters({ ...filters, priority: 'all' });
+                  break;
+                case 'status':
+                  setFilters({ ...filters, status: 'all' });
+                  break;
+                case 'dateRange':
+                  setFilters({ ...filters, dateRange: 'all' });
+                  break;
+                case 'academicYear':
+                  setSelectedYear(null);
+                  setSelectedSemester(null);
+                  break;
+                case 'semester':
+                  setSelectedSemester(null);
+                  break;
+              }
+            }}
+            onClearAll={handleClearFilters}
+            searchQuery={search}
+            onRemoveSearch={() => setSearch('')}
+            showSearchChip={true}
+          />
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left Sidebar - Upcoming Events */}
         <div className="lg:col-span-1">
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="text-lg">Upcoming Events</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <Card className="mb-6 overflow-hidden p-0">
+            {/* Gradient Header */}
+            <div className="bg-gradient-to-r from-[#1e40af] to-[#3b82f6] p-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 flex items-center justify-center">
+                  <Calendar className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">Upcoming Events</h3>
+                  <p className="text-blue-100 text-sm">Next 7 days</p>
+                </div>
+              </div>
+            </div>
+            <CardContent className="p-6">
               {upcomingEvents.length === 0 ? (
                 <p className="text-sm text-gray-500">No upcoming events</p>
               ) : (
@@ -2046,80 +2316,118 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setShowSettings(true)}>
-                  <Settings className="w-4 h-4 mr-2" />
-                  Settings
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleImportEvents}>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Import
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleExportEvents}>
-                  <Download className="w-4 h-4 mr-2" />
-                  Export
-                </Button>
-                <Button size="sm" className="w-full justify-start" onClick={handleAddEvent}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Event
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleSetReminders}>
-                  <Bell className="w-4 h-4 mr-2" />
-                  Set Reminders
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleShareCalendar}>
-                  <Share2 className="w-4 h-4 mr-2" />
-                  Share Calendar
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleGenerateReport}>
-                  <FileText className="w-4 h-4 mr-2" />
-                  Generate Report
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="w-full justify-start" 
-                  onClick={refreshData}
-                  disabled={refreshing}
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-                  {refreshing ? 'Syncing...' : 'Sync Calendar'}
-                </Button>
+          <QuickActionsPanel
+            variant="premium"
+            title="Quick Actions"
+            subtitle="Essential tools and shortcuts"
+            icon={
+              <div className="w-5 h-5 text-white">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
               </div>
-            </CardContent>
-          </Card>
+            }
+            actionCards={[
+              {
+                id: 'add-event',
+                label: 'Add Event',
+                description: 'Create a new academic event',
+                icon: <Plus className="w-5 h-5 text-white" />,
+                onClick: handleAddEvent
+              },
+              {
+                id: 'import-events',
+                label: 'Import Events',
+                description: 'Import events from file',
+                icon: <Upload className="w-5 h-5 text-white" />,
+                onClick: handleImportEvents
+              },
+              {
+                id: 'export-events',
+                label: 'Export Events',
+                description: 'Download events report',
+                icon: <Download className="w-5 h-5 text-white" />,
+                onClick: handleExportEvents
+              },
+              {
+                id: 'refresh-data',
+                label: 'Refresh Data',
+                description: 'Reload calendar data',
+                icon: refreshing ? (
+                  <RefreshCw className="w-5 h-5 text-white animate-spin" />
+                ) : (
+                  <RefreshCw className="w-5 h-5 text-white" />
+                ),
+                onClick: refreshData,
+                disabled: refreshing,
+                loading: refreshing
+              },
+              {
+                id: 'share-calendar',
+                label: 'Share Calendar',
+                description: 'Share calendar link',
+                icon: <Share2 className="w-5 h-5 text-white" />,
+                onClick: handleShareCalendar
+              },
+              {
+                id: 'generate-report',
+                label: 'Generate Report',
+                description: 'Create calendar report',
+                icon: <FileText className="w-5 h-5 text-white" />,
+                onClick: handleGenerateReport
+              },
+              {
+                id: 'settings',
+                label: 'Settings',
+                description: 'Configure calendar settings',
+                icon: <Settings className="w-5 h-5 text-white" />,
+                onClick: () => setShowSettings(true)
+              }
+            ]}
+            collapsible={true}
+            defaultCollapsed={false}
+            vertical={true}
+            className="mb-6"
+          />
         </div>
 
         {/* Main Calendar Area */}
         <div className="lg:col-span-3">
-          <Card>
-            <CardHeader>
+          <Card className="overflow-hidden p-0">
+            {/* Gradient Header */}
+            <div className="bg-gradient-to-r from-[#1e40af] to-[#3b82f6] p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 flex items-center justify-center">
+                    <Calendar className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Calendar View</h3>
+                    <p className="text-blue-100 text-sm">View and manage your events</p>
+                  </div>
+                </div>
+              </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as any)}>
-                    <TabsList>
-                      <TabsTrigger value="month" className="flex items-center gap-2">
+                    <TabsList className="bg-white/20">
+                      <TabsTrigger value="month" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-blue-600 text-white">
                         <CalendarDays className="w-4 h-4" />
                         Month
                       </TabsTrigger>
-                      <TabsTrigger value="week" className="flex items-center gap-2">
+                      <TabsTrigger value="week" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-blue-600 text-white">
                         <Calendar className="w-4 h-4" />
                         Week
                       </TabsTrigger>
-                      <TabsTrigger value="day" className="flex items-center gap-2">
+                      <TabsTrigger value="day" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-blue-600 text-white">
                         <Clock className="w-4 h-4" />
                         Day
                       </TabsTrigger>
-                      <TabsTrigger value="list" className="flex items-center gap-2">
+                      <TabsTrigger value="list" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-blue-600 text-white">
                         <List className="w-4 h-4" />
                         List
                       </TabsTrigger>
-                      <TabsTrigger value="timeline" className="flex items-center gap-2">
+                      <TabsTrigger value="timeline" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-blue-600 text-white">
                         <BarChart2 className="w-4 h-4" />
                         Timeline
                       </TabsTrigger>
@@ -2128,28 +2436,19 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
                 </div>
                 
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={navigateToPrevious}>
+                  <Button variant="outline" size="sm" onClick={navigateToPrevious} className="bg-white/20 hover:bg-white/30 text-white border-white/30 hover:border-white/50">
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
-                  <Button variant="outline" size="sm" onClick={navigateToToday}>
+                  <Button variant="outline" size="sm" onClick={navigateToToday} className="bg-white/20 hover:bg-white/30 text-white border-white/30 hover:border-white/50">
                     Today
                   </Button>
-                  <Button variant="outline" size="sm" onClick={navigateToNext}>
+                  <Button variant="outline" size="sm" onClick={navigateToNext} className="bg-white/20 hover:bg-white/30 text-white border-white/30 hover:border-white/50">
                     <ChevronRight className="w-4 h-4" />
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={loadEvents}
-                    disabled={loading}
-                    className="ml-2"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                   </Button>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
+            </div>
+            <CardContent className="p-6">
               {/* Bulk Actions */}
               {selectedEvents.length > 0 && (
                 <Alert className="mb-4">
@@ -2232,6 +2531,7 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
                 )}
                 
                 {viewMode === 'list' && (
+                  <>
                   <div className="space-y-4">
                     {filteredEvents.length === 0 ? (
                       <div className="text-center py-12">
@@ -2253,7 +2553,7 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
                         )}
                       </div>
                     ) : (
-                      filteredEvents.map(event => (
+                        paginatedListEvents.map(event => (
                         <div key={event.id} className="flex items-center justify-between p-4 border rounded">
                           <div className="flex items-center gap-4">
                             <Checkbox
@@ -2314,11 +2614,23 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
                       ))
                     )}
                   </div>
+                    {filteredEvents.length > 0 && (
+                      <TablePagination
+                        page={listPage}
+                        pageSize={listItemsPerPage}
+                        totalItems={filteredEvents.length}
+                        onPageChange={setListPage}
+                        onPageSizeChange={setListItemsPerPage}
+                        entityLabel="event"
+                      />
+                    )}
+                  </>
                 )}
                 
                 {viewMode === 'timeline' && (
+                  <>
                   <CalendarView 
-                    events={filteredEvents}
+                      events={paginatedTimelineEvents}
                     currentDate={currentDate}
                     viewMode="timeline"
                     selectedEvents={selectedEvents}
@@ -2329,6 +2641,17 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
                       }
                     }}
                   />
+                    {filteredEvents.length > 0 && (
+                      <TablePagination
+                        page={timelinePage}
+                        pageSize={timelineItemsPerPage}
+                        totalItems={filteredEvents.length}
+                        onPageChange={setTimelinePage}
+                        onPageSizeChange={setTimelineItemsPerPage}
+                        entityLabel="event"
+                      />
+                    )}
+                  </>
                 )}
                   </>
                 )}
@@ -2340,11 +2663,44 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
 
       {/* Add Event Dialog */}
       <Dialog open={showAddEvent} onOpenChange={handleAddEventClose}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add New Event</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden bg-white/95 backdrop-blur-sm border border-blue-200 shadow-2xl rounded-2xl p-0 mx-2 my-1 sm:max-w-[600px] sm:mx-4 sm:my-1 md:max-w-[750px] md:mx-6 md:my-1 lg:max-w-[900px] lg:mx-8 lg:my-1 flex flex-col">
+          {/* Visually hidden DialogTitle for accessibility */}
+          <DialogTitle className="sr-only">
+            Add New Event
+          </DialogTitle>
+          
+          {/* Gradient Header */}
+          <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 rounded-t-2xl p-6 relative flex-shrink-0">
+            {/* Close Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleAddEventClose}
+              className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20 rounded-full transition-colors"
+              aria-label="Close dialog"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            
+            <div className="flex items-start gap-4 pr-24">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                <Calendar className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-xl font-bold text-white mb-1">
+                  Add New Event
+                </h2>
+                <p className="text-blue-100 text-sm">
+                  Create a new academic event and add it to the calendar
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <ScrollArea className="h-full">
+              <div className="p-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="title">Event Title *</Label>
@@ -2360,7 +2716,7 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
                 )}
               </div>
               <div>
-                <Label htmlFor="category">Category</Label>
+                    <Label htmlFor="category">Category *</Label>
                 <Select 
                   value={newEvent.category} 
                   onValueChange={(value) => handleFormChange('category', value)}
@@ -2378,13 +2734,17 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
             </div>
             
             <div>
-              <Label htmlFor="description">Description</Label>
+                  <Label htmlFor="description">Description *</Label>
               <Textarea 
                 id="description" 
                 placeholder="Enter event description" 
                 value={newEvent.description}
                 onChange={(e) => handleFormChange('description', e.target.value)}
+                    className={formErrors.description ? 'border-red-500' : ''}
               />
+                  {formErrors.description && (
+                    <p className="text-sm text-red-500 mt-1">{formErrors.description}</p>
+                  )}
             </div>
             
             <div className="grid grid-cols-2 gap-4">
@@ -2471,141 +2831,48 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
                 />
                 <Label htmlFor="requiresApproval">Requires approval</Label>
               </div>
+                </div>
+              </div>
+            </ScrollArea>
             </div>
             
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={handleAddEventClose}>
+          {/* Footer Buttons */}
+          <DialogFooter className="flex items-center justify-end pt-6 border-t border-gray-200 bg-gray-50/50 px-6 py-4 flex-shrink-0">
+            <div className="flex gap-3">
+              <Button 
+                variant="outline" 
+                onClick={handleAddEventClose}
+                className="border-gray-300 text-gray-700 hover:bg-gray-50 rounded"
+              >
                 Cancel
               </Button>
-              <Button onClick={handleAddEventSubmit}>
+              <Button 
+                onClick={handleAddEventSubmit}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded"
+              >
                 Add Event
               </Button>
             </div>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Import Dialog */}
-      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Import Events</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="importFile">Select CSV File</Label>
-              <Input 
-                id="importFile" 
-                type="file" 
-                accept=".csv" 
-                onChange={handleFileSelect}
-                disabled={isImporting}
-              />
-              {importFile && (
-                <p className="text-sm text-gray-600 mt-1">
-                  Selected: {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
-                </p>
-              )}
-            </div>
-            
-            {isImporting && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span>Importing events...</span>
-                  <span>{importProgress}%</span>
-                </div>
-                <Progress value={importProgress} className="w-full" />
-              </div>
-            )}
-            
-            <div className="bg-blue-50 p-3 rounded-lg">
-              <h4 className="font-medium text-blue-900 mb-2">CSV Format Requirements:</h4>
-              <p className="text-sm text-blue-800">
-                Your CSV file should have the following columns: Title, Description, Start Date, End Date, All Day, Category, Priority, Location, Attendees, Recurring, Recurrence Pattern, Requires Approval, Tags
-              </p>
-            </div>
-            
-            <div className="flex justify-end gap-2">
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setShowImportDialog(false);
-                  setImportFile(null);
-                  setImportProgress(0);
-                }}
-                disabled={isImporting}
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleImport}
-                disabled={!importFile || isImporting}
-              >
-                {isImporting ? 'Importing...' : 'Import Events'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Import Dialog using shared ImportDialog component */}
+      <ImportDialog
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onImport={handleEventsImport}
+        entityName="Events"
+      />
 
-      {/* Export Dialog */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Export Events</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="exportFormat">Export Format</Label>
-              <Select 
-                value={exportFormat} 
-                onValueChange={(value: any) => setExportFormat(value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select format" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="csv">CSV (Comma Separated Values)</SelectItem>
-                  <SelectItem value="xlsx">Excel Spreadsheet</SelectItem>
-                  <SelectItem value="pdf">PDF Document</SelectItem>
-                  <SelectItem value="ical">iCal Calendar</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <h4 className="font-medium text-gray-900 mb-2">Export Information:</h4>
-              <p className="text-sm text-gray-600">
-                Exporting {events.length} events to {exportFormat.toUpperCase()} format.
-                {exportFormat === 'ical' && ' This format is compatible with Google Calendar, Outlook, and other calendar applications.'}
-              </p>
-            </div>
-            
-            {isExporting && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Preparing export...</span>
-              </div>
-            )}
-            
-            <div className="flex justify-end gap-2">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowExportDialog(false)}
-                disabled={isExporting}
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleExport}
-                disabled={isExporting || events.length === 0}
-              >
-                {isExporting ? 'Exporting...' : `Export to ${exportFormat.toUpperCase()}`}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Export Dialog using shared ExportDialog component */}
+      <ExportDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        onExport={handleExport}
+        dataCount={events.length}
+        entityType="event"
+      />
 
       {/* Settings Dialog */}
       <Dialog open={showSettings} onOpenChange={setShowSettings}>
@@ -2719,114 +2986,301 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
 
       {/* Event Details Dialog */}
       <Dialog open={showEventDetails} onOpenChange={setShowEventDetails}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Event Details</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-full w-full max-h-[90vh] overflow-hidden bg-white/95 backdrop-blur-sm border border-blue-200 shadow-2xl rounded-2xl p-0 mx-2 my-1 sm:max-w-[600px] sm:mx-4 sm:my-1 md:max-w-[750px] md:mx-6 md:my-1 lg:max-w-[900px] lg:mx-8 lg:my-1 flex flex-col h-full">
+          {/* Visually hidden DialogTitle for accessibility */}
+          <DialogTitle className="sr-only">
+            Event Details
+          </DialogTitle>
+          
+          {/* Gradient Header */}
           {selectedEvent && (
-            <div className="space-y-4">
-              <div className="flex items-start justify-between">
+            <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 rounded-t-2xl p-6 relative flex-shrink-0">
+              {/* Close Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowEventDetails(false)}
+                className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20 rounded-full transition-colors"
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+              
+              <div className="flex items-start gap-4 pr-24">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Calendar className="w-6 h-6 text-white" />
+                </div>
                 <div className="flex-1">
-                  <h3 className="text-xl font-semibold">{selectedEvent.title}</h3>
-                  <div className="flex items-center gap-2 mt-2">
+                  <h2 className="text-xl font-bold text-white mb-1">
+                    {selectedEvent.title}
+                  </h2>
+                  <p className="text-blue-100 text-sm mb-2">
+                    Event Details
+                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge 
-                      className={`text-xs ${EVENT_CATEGORIES[selectedEvent.category].textColor} bg-opacity-10`}
+                      className={`text-xs bg-white/20 text-white border-white/30 ${EVENT_CATEGORIES[selectedEvent.category].textColor === 'text-blue-500' ? 'bg-blue-500/20' : ''}`}
                     >
                       {EVENT_CATEGORIES[selectedEvent.category].label}
                     </Badge>
-                    <Badge className={`text-xs ${PRIORITY_LEVELS[selectedEvent.priority].color}`}>
+                    <Badge className={`text-xs bg-white/20 text-white border-white/30`}>
                       {PRIORITY_LEVELS[selectedEvent.priority].label}
                     </Badge>
-                    <Badge variant={selectedEvent.status === 'published' ? 'default' : 'secondary'}>
-                      {selectedEvent.status}
+                    <Badge className={`text-xs bg-white/20 text-white border-white/30`}>
+                      {selectedEvent.status.charAt(0).toUpperCase() + selectedEvent.status.slice(1)}
                     </Badge>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => {
-                    setShowEventDetails(false);
-                    setShowEditEvent(true);
-                  }}>
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setShowEventDetails(false)}>
-                    Close
-                  </Button>
                 </div>
               </div>
-              
+          )}
+
+          {/* Scrollable Content Area */}
+          {selectedEvent && (
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <ScrollArea className="h-full">
+                <div className="p-6 space-y-6">
+                  {/* Description Section */}
               {selectedEvent.description && (
-                <div>
-                  <h4 className="font-medium mb-2">Description</h4>
-                  <p className="text-gray-600">{selectedEvent.description}</p>
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-blue-200 overflow-hidden">
+                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-100 to-gray-200 border-b border-blue-300">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded flex items-center justify-center">
+                            <Info className="w-4 h-4 text-white" />
+                          </div>
+                          <div className="text-lg font-semibold text-blue-900">Description</div>
+                        </div>
+                      </div>
+                      <div className="p-6">
+                        <div className="text-base text-blue-800 leading-relaxed whitespace-pre-wrap">
+                          {selectedEvent.description}
+                        </div>
+                      </div>
                 </div>
               )}
               
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-medium mb-2">Start Date</h4>
-                  <p className="text-gray-600">
+                  {/* Event Information Section */}
+                  <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-blue-200 overflow-hidden">
+                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-100 to-gray-200 border-b border-blue-300">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded flex items-center justify-center">
+                          <Info className="w-4 h-4 text-white" />
+                        </div>
+                        <h4 className="text-lg font-semibold text-blue-900">Event Information</h4>
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="group relative bg-gray-50 hover:bg-gradient-to-br hover:from-gray-100 hover:to-gray-200 rounded p-4 border border-blue-200 hover:border-blue-400 transition-all duration-200 shadow-sm hover:shadow-md">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Clock className="w-4 h-4 text-blue-600" />
+                                <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
+                                  Start Date
+                                </div>
+                              </div>
+                              <div className="text-base font-medium text-blue-800">
                     {selectedEvent.startDate.toLocaleDateString()} at {selectedEvent.startDate.toLocaleTimeString()}
-                  </p>
                 </div>
-                <div>
-                  <h4 className="font-medium mb-2">End Date</h4>
-                  <p className="text-gray-600">
+                            </div>
+                          </div>
+                        </div>
+                        <div className="group relative bg-gray-50 hover:bg-gradient-to-br hover:from-gray-100 hover:to-gray-200 rounded p-4 border border-blue-200 hover:border-blue-400 transition-all duration-200 shadow-sm hover:shadow-md">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Clock className="w-4 h-4 text-blue-600" />
+                                <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
+                                  End Date
+                                </div>
+                              </div>
+                              <div className="text-base font-medium text-blue-800">
                     {selectedEvent.endDate.toLocaleDateString()} at {selectedEvent.endDate.toLocaleTimeString()}
-                  </p>
                 </div>
               </div>
-              
+                          </div>
+                        </div>
               {selectedEvent.location && (
-                <div>
-                  <h4 className="font-medium mb-2">Location</h4>
-                  <p className="text-gray-600">{selectedEvent.location}</p>
+                          <div className="group relative bg-gray-50 hover:bg-gradient-to-br hover:from-gray-100 hover:to-gray-200 rounded p-4 border border-blue-200 hover:border-blue-400 transition-all duration-200 shadow-sm hover:shadow-md">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <MapPin className="w-4 h-4 text-blue-600" />
+                                  <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
+                                    Location
+                                  </div>
+                                </div>
+                                <div className="text-base font-medium text-blue-800">
+                                  {selectedEvent.location}
+                                </div>
+                              </div>
+                            </div>
                 </div>
               )}
+                      </div>
+                    </div>
+                  </div>
               
+                  {/* Attendees Section */}
               {selectedEvent.attendees && selectedEvent.attendees.length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-2">Attendees</h4>
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-blue-200 overflow-hidden">
+                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-100 to-gray-200 border-b border-blue-300">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded flex items-center justify-center">
+                            <Users className="w-4 h-4 text-white" />
+                          </div>
+                          <h4 className="text-lg font-semibold text-blue-900">Attendees</h4>
+                        </div>
+                      </div>
+                      <div className="p-6">
                   <div className="flex flex-wrap gap-2">
                     {selectedEvent.attendees.map((attendee, index) => (
-                      <Badge key={index} variant="outline">{attendee}</Badge>
+                            <Badge key={index} variant="outline" className="text-sm px-3 py-1">
+                              {attendee}
+                            </Badge>
                     ))}
+                        </div>
                   </div>
                 </div>
               )}
               
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-medium mb-2">Created By</h4>
-                  <p className="text-gray-600">{selectedEvent.createdBy}</p>
+                  {/* Metadata Section */}
+                  <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-blue-200 overflow-hidden">
+                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-100 to-gray-200 border-b border-blue-300">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded flex items-center justify-center">
+                          <Info className="w-4 h-4 text-white" />
                 </div>
-                <div>
-                  <h4 className="font-medium mb-2">Created At</h4>
-                  <p className="text-gray-600">{selectedEvent.createdAt.toLocaleDateString()}</p>
+                        <h4 className="text-lg font-semibold text-blue-900">Metadata</h4>
                 </div>
               </div>
+                    <div className="p-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="group relative bg-gray-50 hover:bg-gradient-to-br hover:from-gray-100 hover:to-gray-200 rounded p-4 border border-blue-200 hover:border-blue-400 transition-all duration-200 shadow-sm hover:shadow-md">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <User className="w-4 h-4 text-blue-600" />
+                                <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
+                                  Created By
+                                </div>
+                              </div>
+                              <div className="text-base font-medium text-blue-800">
+                                {selectedEvent.createdBy}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="group relative bg-gray-50 hover:bg-gradient-to-br hover:from-gray-100 hover:to-gray-200 rounded p-4 border border-blue-200 hover:border-blue-400 transition-all duration-200 shadow-sm hover:shadow-md">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Clock className="w-4 h-4 text-blue-600" />
+                                <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
+                                  Created At
+                                </div>
+                              </div>
+                              <div className="text-base font-medium text-blue-800">
+                                {selectedEvent.createdAt.toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
             </div>
+          )}
+
+          {/* Footer with actions */}
+          {selectedEvent && (
+            <DialogFooter className="!flex !justify-end gap-3 p-6 flex-shrink-0 border-t-2 border-blue-300 bg-blue-50/80 rounded-b-2xl shadow-inner">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowEventDetails(false);
+                  setShowEditEvent(true);
+                }}
+                className="gap-2 rounded-xl"
+              >
+                <Edit className="w-4 h-4" />
+                Edit
+              </Button>
+              <Button
+                variant="default"
+                onClick={() => setShowEventDetails(false)}
+                className="gap-2 rounded-xl"
+              >
+                Close
+              </Button>
+            </DialogFooter>
           )}
         </DialogContent>
       </Dialog>
 
       {/* Edit Event Dialog */}
-      <Dialog open={showEditEvent} onOpenChange={setShowEditEvent}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit Event</DialogTitle>
-          </DialogHeader>
-          {selectedEvent && (
-            <div className="space-y-4">
+      <Dialog open={showEditEvent} onOpenChange={handleEditEventClose}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden bg-white/95 backdrop-blur-sm border border-blue-200 shadow-2xl rounded-2xl p-0 mx-2 my-1 sm:max-w-[600px] sm:mx-4 sm:my-1 md:max-w-[750px] md:mx-6 md:my-1 lg:max-w-[900px] lg:mx-8 lg:my-1 flex flex-col">
+          {/* Visually hidden DialogTitle for accessibility */}
+          <DialogTitle className="sr-only">
+            Edit Event
+          </DialogTitle>
+          
+          {/* Gradient Header */}
+          <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 rounded-t-2xl p-6 relative flex-shrink-0">
+            {/* Close Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleEditEventClose}
+              className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20 rounded-full transition-colors"
+              aria-label="Close dialog"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            
+            <div className="flex items-start gap-4 pr-24">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                <Calendar className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-xl font-bold text-white mb-1">
+                  Edit Event
+                </h2>
+                <p className="text-blue-100 text-sm">
+                  Update event details and save changes
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <ScrollArea className="h-full">
+              <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="editTitle">Event Title</Label>
-                  <Input id="editTitle" defaultValue={selectedEvent.title} />
+                    <Label htmlFor="editTitle">Event Title *</Label>
+                    <Input 
+                      id="editTitle" 
+                      placeholder="Enter event title" 
+                      value={editEvent.title}
+                      onChange={(e) => handleEditFormChange('title', e.target.value)}
+                      className={editFormErrors.title ? 'border-red-500' : ''}
+                    />
+                    {editFormErrors.title && (
+                      <p className="text-sm text-red-500 mt-1">{editFormErrors.title}</p>
+                    )}
                 </div>
                 <div>
-                  <Label htmlFor="editCategory">Category</Label>
-                  <Select defaultValue={selectedEvent.category}>
+                    <Label htmlFor="editCategory">Category *</Label>
+                    <Select 
+                      value={editEvent.category} 
+                      onValueChange={(value) => handleEditFormChange('category', value)}
+                    >
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
@@ -2840,33 +3294,55 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
               </div>
               
               <div>
-                <Label htmlFor="editDescription">Description</Label>
-                <Textarea id="editDescription" defaultValue={selectedEvent.description} />
+                  <Label htmlFor="editDescription">Description *</Label>
+                  <Textarea 
+                    id="editDescription" 
+                    placeholder="Enter event description" 
+                    value={editEvent.description}
+                    onChange={(e) => handleEditFormChange('description', e.target.value)}
+                    className={editFormErrors.description ? 'border-red-500' : ''}
+                  />
+                  {editFormErrors.description && (
+                    <p className="text-sm text-red-500 mt-1">{editFormErrors.description}</p>
+                  )}
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="editStartDate">Start Date</Label>
+                    <Label htmlFor="editStartDate">Start Date *</Label>
                   <Input 
                     id="editStartDate" 
                     type="datetime-local" 
-                    defaultValue={selectedEvent.startDate.toISOString().slice(0, 16)}
+                      value={editEvent.startDate}
+                      onChange={(e) => handleEditFormChange('startDate', e.target.value)}
+                      className={editFormErrors.startDate ? 'border-red-500' : ''}
                   />
+                    {editFormErrors.startDate && (
+                      <p className="text-sm text-red-500 mt-1">{editFormErrors.startDate}</p>
+                    )}
                 </div>
                 <div>
-                  <Label htmlFor="editEndDate">End Date</Label>
+                    <Label htmlFor="editEndDate">End Date *</Label>
                   <Input 
                     id="editEndDate" 
                     type="datetime-local" 
-                    defaultValue={selectedEvent.endDate.toISOString().slice(0, 16)}
+                      value={editEvent.endDate}
+                      onChange={(e) => handleEditFormChange('endDate', e.target.value)}
+                      className={editFormErrors.endDate ? 'border-red-500' : ''}
                   />
+                    {editFormErrors.endDate && (
+                      <p className="text-sm text-red-500 mt-1">{editFormErrors.endDate}</p>
+                    )}
                 </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="editPriority">Priority</Label>
-                  <Select defaultValue={selectedEvent.priority}>
+                    <Select 
+                      value={editEvent.priority} 
+                      onValueChange={(value) => handleEditFormChange('priority', value)}
+                    >
                     <SelectTrigger>
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
@@ -2879,68 +3355,65 @@ ${Object.entries(EVENT_CATEGORIES).map(([key, value]) =>
                 </div>
                 <div>
                   <Label htmlFor="editLocation">Location</Label>
-                  <Input id="editLocation" defaultValue={selectedEvent.location} />
+                    <Input 
+                      id="editLocation" 
+                      placeholder="Enter location" 
+                      value={editEvent.location}
+                      onChange={(e) => handleEditFormChange('location', e.target.value)}
+                    />
                 </div>
               </div>
               
+                <div className="space-y-3">
               <div className="flex items-center space-x-2">
-                <Checkbox id="editAllDay" defaultChecked={selectedEvent.allDay} />
+                    <Checkbox 
+                      id="editAllDay" 
+                      checked={editEvent.allDay}
+                      onCheckedChange={(checked) => handleEditFormChange('allDay', checked)}
+                    />
                 <Label htmlFor="editAllDay">All day event</Label>
               </div>
               
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowEditEvent(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={async () => {
-                  try {
-                    if (!selectedEvent) return;
-                    
-                    const eventData = {
-                      title: (document.getElementById('editTitle') as HTMLInputElement)?.value || selectedEvent.title,
-                      description: (document.getElementById('editDescription') as HTMLTextAreaElement)?.value || selectedEvent.description,
-                      eventType: mapCategoryToEventType(selectedEvent.category),
-                      eventDate: (document.getElementById('editStartDate') as HTMLInputElement)?.value || selectedEvent.startDate.toISOString(),
-                      endDate: (document.getElementById('editEndDate') as HTMLInputElement)?.value || selectedEvent.endDate.toISOString(),
-                      location: (document.getElementById('editLocation') as HTMLInputElement)?.value || selectedEvent.location,
-                      priority: mapPriorityToDbLevel(selectedEvent.priority),
-                      isPublic: true,
-                      requiresRegistration: selectedEvent.requiresApproval,
-                      capacity: null,
-                      imageUrl: null,
-                      contactEmail: null,
-                      contactPhone: null
-                    };
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="editRecurring" 
+                      checked={editEvent.recurring}
+                      onCheckedChange={(checked) => handleEditFormChange('recurring', checked)}
+                    />
+                    <Label htmlFor="editRecurring">Recurring event</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="editRequiresApproval" 
+                      checked={editEvent.requiresApproval}
+                      onCheckedChange={(checked) => handleEditFormChange('requiresApproval', checked)}
+                    />
+                    <Label htmlFor="editRequiresApproval">Requires approval</Label>
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+          </div>
 
-                    const response = await fetch(`/api/events/${selectedEvent.id}`, {
-                      method: 'PUT',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'x-user-role': 'ADMIN', // TODO: Get from auth context
-                        'x-user-id': '1' // TODO: Get from auth context
-                      },
-                      body: JSON.stringify(eventData)
-                    });
-
-                    if (!response.ok) {
-                      const errorData = await response.json();
-                      throw new Error(errorData.error || 'Failed to update event');
-                    }
-
-                    // Reload events to get updated data
-                    await loadEvents();
-                    toast.success("Event updated successfully");
-                    setShowEditEvent(false);
-                  } catch (error) {
-                    console.error('Error updating event:', error);
-                    toast.error(error instanceof Error ? error.message : 'Failed to update event');
-                  }
-                }}>
+          {/* Footer Buttons */}
+          <DialogFooter className="flex items-center justify-end pt-6 border-t border-gray-200 bg-gray-50/50 px-6 py-4 flex-shrink-0">
+            <div className="flex gap-3">
+              <Button 
+                variant="outline" 
+                onClick={handleEditEventClose}
+                className="border-gray-300 text-gray-700 hover:bg-gray-50 rounded"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleEditEventSubmit}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded"
+              >
                   Update Event
                 </Button>
               </div>
-            </div>
-          )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

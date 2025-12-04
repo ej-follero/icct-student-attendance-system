@@ -127,6 +127,7 @@ export async function GET(request: NextRequest) {
       
       // Academic Years
       prisma.subjectSchedule.findMany({
+        where: { deletedAt: null }, // Exclude soft-deleted schedules
         select: { academicYear: true },
         distinct: ['academicYear'],
         orderBy: { academicYear: 'desc' }

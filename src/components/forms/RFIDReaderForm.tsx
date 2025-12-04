@@ -50,13 +50,52 @@ interface Room {
   status: string;
 }
 
+type RFIDReaderFormInput = Partial<RFIDReaderFormData> & {
+  deviceId?: string | null;
+  deviceName?: string | null;
+  ipAddress?: string | null;
+  status?: RFIDReaderFormData["status"] | null;
+  roomId?: number | string | null;
+  notes?: string | null;
+  components?: {
+    power?: string | null;
+    antenna?: string | null;
+    firmware?: string | null;
+  } | null;
+};
+
 interface RFIDReaderFormProps {
   type: "create" | "update";
-  data?: RFIDReaderFormData;
+  data?: RFIDReaderFormInput | null;
   id?: number;
   onSuccess: (data: RFIDReaderFormData) => void;
   showFooter?: boolean;
 }
+
+const normalizeFormValues = (raw?: RFIDReaderFormInput | null): RFIDReaderFormData => {
+  const parseRoomId = (roomId: RFIDReaderFormInput["roomId"]) => {
+    if (typeof roomId === "number" && !Number.isNaN(roomId)) return roomId;
+    if (typeof roomId === "string") {
+      const parsed = parseInt(roomId, 10);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  };
+
+  return {
+    deviceId: raw?.deviceId ?? "",
+    deviceName: raw?.deviceName ?? "",
+    ipAddress: raw?.ipAddress ?? "",
+    status: raw?.status ?? "ACTIVE",
+    roomId: parseRoomId(raw?.roomId),
+    notes: raw?.notes ?? "",
+    components: {
+      power: raw?.components?.power ?? "",
+      antenna: raw?.components?.antenna ?? "",
+      firmware: raw?.components?.firmware ?? "",
+    },
+  };
+};
 
 const RFIDReaderForm: React.FC<RFIDReaderFormProps> = ({ type, data, id, onSuccess, showFooter = true }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -67,26 +106,14 @@ const RFIDReaderForm: React.FC<RFIDReaderFormProps> = ({ type, data, id, onSucce
 
   const form = useForm<RFIDReaderFormData>({
     resolver: zodResolver(rfidReaderFormSchema),
-    defaultValues: data || {
-      deviceId: "",
-      deviceName: "",
-      ipAddress: "",
-      status: "ACTIVE",
-      roomId: 0,
-      notes: "",
-      components: {
-        power: "",
-        antenna: "",
-        firmware: ""
-      },
-    },
+    defaultValues: normalizeFormValues(data),
   });
 
   const watchedRoomId = form.watch('roomId');
 
   useEffect(() => {
     if (data) {
-      form.reset(data);
+      form.reset(normalizeFormValues(data));
     }
   }, [data, form]);
 
@@ -112,7 +139,7 @@ const RFIDReaderForm: React.FC<RFIDReaderFormProps> = ({ type, data, id, onSucce
           // Handle both array and object responses
           const roomsData = Array.isArray(data) ? data : (data.rooms || data.data || []);
           setRooms(roomsData);
-          console.log('✅ Rooms loaded successfully:', roomsData.length);
+          console.log('Rooms loaded successfully:', roomsData.length);
         } else {
           const errorText = await response.text();
           console.error('Failed to fetch rooms:', errorText);
@@ -164,12 +191,12 @@ const RFIDReaderForm: React.FC<RFIDReaderFormProps> = ({ type, data, id, onSucce
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('❌ API Error:', errorData);
+        console.error('API Error:', errorData);
         throw new Error(errorData.error || errorData.message || `Failed to ${type} RFID reader`);
       }
 
       const result = await response.json();
-      console.log('✅ RFID Reader operation successful:', result);
+      console.log('RFID Reader operation successful:', result);
       
       // Dismiss loading toast and show success
       toast.dismiss(loadingToast);
@@ -179,7 +206,7 @@ const RFIDReaderForm: React.FC<RFIDReaderFormProps> = ({ type, data, id, onSucce
       
       onSuccess(result);
     } catch (error: any) {
-      console.error(`❌ Error ${type}ing reader:`, error);
+      console.error(`Error ${type}ing reader:`, error);
       toast.error(error.message || `Failed to ${type} RFID reader.`, {
         description: 'Please check your input and try again.'
       });

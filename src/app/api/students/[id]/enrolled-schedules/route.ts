@@ -35,6 +35,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const schedules = await prisma.subjectSchedule.findMany({
       where: {
         status: 'ACTIVE',
+        deletedAt: null, // Exclude soft-deleted schedules
         StudentSchedule: {
           some: { studentId, status: 'ACTIVE' }
         }
@@ -48,7 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     });
 
     const items = schedules.map((s) => ({
-      value: String(s.subjectSchedId),
+      value: `schedule:${s.subjectSchedId}`,
       label: `${s.subject.subjectCode} • ${s.section.sectionName} • ${s.day} ${s.startTime}-${s.endTime} • ${s.instructor?.firstName || 'Unknown'} ${s.instructor?.lastName || 'Instructor'}`
     }));
 

@@ -67,6 +67,7 @@ interface RFIDTagFormProps {
   mode?: 'create' | 'edit';
   showFooter?: boolean;
   onReset?: () => void;
+  formRef?: React.RefObject<HTMLFormElement> | null;
 }
 
 export function RFIDTagForm({ 
@@ -75,7 +76,8 @@ export function RFIDTagForm({
   isSubmitting = false, 
   mode = 'create',
   showFooter = true,
-  onReset
+  onReset,
+  formRef = null,
 }: RFIDTagFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [lastProcessedScan, setLastProcessedScan] = useState<string | null>(null);
@@ -353,7 +355,7 @@ export function RFIDTagForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+      <form ref={formRef} onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Tag Number */}
           <FormField

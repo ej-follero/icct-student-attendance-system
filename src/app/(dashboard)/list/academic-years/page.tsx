@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
-import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { 
   Plus, 
@@ -46,7 +45,7 @@ import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog';
 import { ViewDialog } from '@/components/reusable/Dialogs/ViewDialog';
 import { ExportDialog } from '@/components/reusable/Dialogs/ExportDialog';
 import { ImportDialog } from '@/components/reusable/Dialogs/ImportDialog';
-import { QuickActionsPanel } from '@/components/reusable/QuickActionsPanel';
+import { QuickActionsPanel } from '@/components/reusable/QuickActionsPanel/QuickActionsPanel';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -68,6 +67,7 @@ interface AcademicYear {
   endDate: string;
   isActive: boolean;
   semesters: Semester[];
+  isArchived?: boolean;
 }
 
 type SortFieldKey = 'name' | 'startDate' | 'endDate' | 'isActive' | 'semesterCount';
@@ -84,6 +84,7 @@ export default function AcademicYearsPage() {
   const [sortField, setSortField] = useState<SortFieldKey>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [expandedRowIds, setExpandedRowIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
   
   // Dialog states
@@ -108,7 +109,11 @@ export default function AcademicYearsPage() {
         throw new Error('Failed to fetch academic years');
       }
       const data = await response.json();
-      setAcademicYears(data);
+      const normalizedData = (data as AcademicYear[]).map((year) => ({
+        ...year,
+        isArchived: year.isArchived ?? false
+      }));
+      setAcademicYears(normalizedData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
       toast.error('Failed to load academic years');
@@ -123,7 +128,7 @@ export default function AcademicYearsPage() {
 
   // Filtered and sorted data
   const filteredAcademicYears = useMemo(() => {
-    let filtered = academicYears;
+    let filtered = academicYears.filter((year) => !year.isArchived);
 
     // Search filter
     if (debouncedSearchTerm) {
@@ -182,11 +187,19 @@ export default function AcademicYearsPage() {
     return filtered;
   }, [academicYears, debouncedSearchTerm, statusFilter, sortField, sortOrder]);
 
+  const selectedYears = useMemo(
+    () => academicYears.filter((year) => selectedIds.includes(String(year.id))),
+    [academicYears, selectedIds]
+  );
+
+  const canArchiveSelected = selectedYears.length > 0 && selectedYears.every((year) => year.semesters.length === 0);
+
   // Event handlers
-  const handleFormSuccess = () => {
+  const handleFormSuccess = (mode: 'create' | 'edit') => {
     setShowForm(false);
+    setSelectedAcademicYear(null);
     fetchAcademicYears();
-    toast.success('Academic year created successfully');
+    toast.success(mode === 'edit' ? 'Academic year updated successfully' : 'Academic year created successfully');
   };
 
   const handleViewAcademicYear = (academicYear: AcademicYear) => {
@@ -205,19 +218,77 @@ export default function AcademicYearsPage() {
   };
 
   // Column configuration
-  const ACADEMIC_YEAR_COLUMNS: TableListColumn<AcademicYear>[] = [
+  const isAllSelected = filteredAcademicYears.length > 0 && filteredAcademicYears.every(year => selectedIds.includes(String(year.id)));
+  const isIndeterminate = selectedIds.length > 0 && !isAllSelected;
+
+  const academicYearColumns: TableListColumn<AcademicYear>[] = useMemo(() => [
     {
-      header: "Academic Year",
-      accessor: "name",
-      className: "font-medium",
-      render: (item: AcademicYear) => (
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-blue-600" />
+      header: '',
+      accessor: 'expander',
+      className: 'w-10 text-center px-2 py-3',
+      expandedContent: (item: AcademicYear) => (
+        <td colSpan={5} className="bg-blue-50 rounded-b-xl">
+          <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-blue-900">Semesters ({item.semesters.length})</div>
+              <Badge variant={item.isActive ? 'default' : 'secondary'}>
+                {item.isActive ? 'Active Year' : 'Inactive Year'}
+              </Badge>
+            </div>
+            {item.semesters.length === 0 ? (
+              <p className="text-sm text-gray-500">No semesters available for this academic year.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {item.semesters.map((semester) => (
+                  <div key={semester.id} className="bg-white rounded-lg border border-blue-100 p-3 shadow-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-blue-500" />
+                        <span className="text-sm font-semibold text-blue-900">{semester.name}</span>
+                      </div>
+                      <Badge
+                        className={
+                          semester.status === 'CURRENT' ? 'bg-green-100 text-green-800' :
+                          semester.status === 'UPCOMING' ? 'bg-blue-100 text-blue-800' :
+                          semester.status === 'COMPLETED' ? 'bg-gray-100 text-gray-800' :
+                          'bg-red-100 text-red-800'
+                        }
+                      >
+                        {semester.status}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      {format(new Date(semester.startDate), 'MMM dd, yyyy')} - {format(new Date(semester.endDate), 'MMM dd, yyyy')}
+                    </p>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-500">
+                      <span className="font-medium text-gray-700">Type:</span>
+                      <span className="uppercase">{semester.type}</span>
+                      <span className="font-medium text-gray-700">Active:</span>
+                      <span>{semester.isActive ? 'Yes' : 'No'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+        </td>
+      )
+    },
+    {
+      header: '',
+      accessor: 'select',
+      className: 'w-10 text-center px-2 py-3',
+    },
+    {
+      header: 'Academic Year',
+      accessor: 'name',
+      className: 'px-4 py-3 text-center',
+      headerClassName: 'justify-center text-center',
+      render: (item: AcademicYear) => (
+        <div className="flex items-center justify-center gap-3">
           <div>
-            <div className="font-medium text-gray-900">{item.name}</div>
-            <div className="text-sm text-gray-500">
+            <div className="font-semibold text-blue-900 text-sm sm:text-base">{item.name}</div>
+            <div className="text-xs sm:text-sm text-gray-500">
               {format(new Date(item.startDate), 'MMM yyyy')} - {format(new Date(item.endDate), 'MMM yyyy')}
             </div>
           </div>
@@ -225,70 +296,96 @@ export default function AcademicYearsPage() {
       )
     },
     {
-      header: "Duration",
-      accessor: "startDate",
-      className: "text-sm text-gray-600",
+      header: 'Duration',
+      accessor: 'duration',
+      className: 'px-4 py-3 text-center text-sm text-blue-900 font-semibold',
+      headerClassName: 'justify-center text-center text-blue-900',
       render: (item: AcademicYear) => (
-        <div>
-          <div className="text-sm text-gray-900">
-            {format(new Date(item.startDate), 'MMM dd, yyyy')}
-          </div>
-          <div className="text-xs text-gray-500">
-            to {format(new Date(item.endDate), 'MMM dd, yyyy')}
-          </div>
+        <div className="text-sm text-gray-700">
+          <div>{format(new Date(item.startDate), 'MMM dd, yyyy')}</div>
+          <div className="text-xs text-gray-500">to {format(new Date(item.endDate), 'MMM dd, yyyy')}</div>
         </div>
       )
     },
     {
-      header: "Semesters",
-      accessor: "semesters",
-      className: "text-center",
+      header: 'Semesters',
+      accessor: 'semesters',
+      className: 'px-4 py-3 text-center text-sm text-blue-900 font-semibold',
+      headerClassName: 'justify-center text-center text-blue-900',
       render: (item: AcademicYear) => (
-        <div className="flex items-center justify-center space-x-1">
+        <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-900">
           <Calendar className="w-4 h-4 text-gray-400" />
-          <span className="text-sm font-medium">{item.semesters.length}</span>
+          {item.semesters.length}
         </div>
       )
     },
     {
-      header: "Status",
-      accessor: "isActive",
-      className: "text-center",
+      header: 'Status',
+      accessor: 'status',
+      className: 'px-4 py-3 text-center',
+      headerClassName: 'justify-center text-center',
       render: (item: AcademicYear) => (
-        <Badge variant={item.isActive ? 'default' : 'secondary'}>
-          {item.isActive ? 'Active' : 'Inactive'}
+        <Badge
+          variant={
+            item.isActive || item.semesters.some((sem) => sem.isActive)
+              ? 'default'
+              : 'secondary'
+          }
+          className="px-3 py-1 text-xs"
+        >
+          {item.isActive || item.semesters.some((sem) => sem.isActive) ? 'Active' : 'Inactive'}
         </Badge>
       )
     },
     {
-      header: "Actions",
-      accessor: "actions",
-      className: "text-right",
+      header: 'Actions',
+      accessor: 'actions',
+      className: 'px-4 py-3 text-center',
+      headerClassName: 'justify-center text-center',
       render: (item: AcademicYear) => (
         <TableRowActions
           itemName={item.name}
           onView={() => handleViewAcademicYear(item)}
           onEdit={() => handleEditAcademicYear(item)}
           onDelete={() => handleDeleteAcademicYear(item)}
+          deleteTooltip={
+            item.semesters.length > 0
+              ? 'Archive unavailable: remove connected semesters first'
+              : 'Archive'
+          }
+          disableDelete={item.semesters.length > 0}
+          deleteVariant="archive"
+          deleteAriaLabel="Archive academic year"
         />
       )
     }
-  ];
+  ], [handleViewAcademicYear, handleEditAcademicYear, handleDeleteAcademicYear]);
 
   const confirmDelete = async () => {
     if (!academicYearToDelete) return;
     
+  if (academicYearToDelete.semesters.length > 0) {
+    toast.error('Cannot archive an academic year with connected semesters.');
+    setShowDeleteDialog(false);
+    setAcademicYearToDelete(null);
+    return;
+  }
+
     try {
-      // Note: You'll need to implement the delete API endpoint
-      // const response = await fetch(`/api/academic-years/${academicYearToDelete.id}`, {
-      //   method: 'DELETE'
-      // });
-      // if (!response.ok) throw new Error('Failed to delete academic year');
-      
-      setAcademicYears(prev => prev.filter(year => year.id !== academicYearToDelete.id));
-      toast.success('Academic year deleted successfully');
+    // TODO: replace with archive API when available
+    setAcademicYears(prev =>
+      prev.map((year) =>
+        year.id === academicYearToDelete.id
+          ? { ...year, isArchived: true, isActive: false }
+          : year
+      )
+    );
+    setSelectedIds((prev) =>
+      prev.filter((id) => id !== String(academicYearToDelete.id))
+    );
+    toast.success('Academic year archived successfully');
     } catch (error) {
-      toast.error('Failed to delete academic year');
+    toast.error('Failed to archive academic year');
     } finally {
       setShowDeleteDialog(false);
       setAcademicYearToDelete(null);
@@ -303,9 +400,21 @@ export default function AcademicYearsPage() {
 
     try {
       switch (action) {
-        case 'delete':
-          // Implement bulk delete
-          toast.success(`${selectedIds.length} academic years deleted`);
+        case 'archive':
+          if (!canArchiveSelected) {
+            toast.error('Deselect academic years with connected semesters before archiving.');
+            return;
+          }
+          // TODO: replace with archive API when available
+          setAcademicYears((prev) =>
+            prev.map((year) =>
+              selectedIds.includes(String(year.id))
+                ? { ...year, isArchived: true, isActive: false }
+                : year
+            )
+          );
+          setSelectedIds([]);
+          toast.success('Selected academic years archived');
           break;
         case 'export':
           setShowExportDialog(true);
@@ -316,6 +425,24 @@ export default function AcademicYearsPage() {
     } catch (error) {
       toast.error('Bulk action failed');
     }
+  };
+
+  const handleSelectRow = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(existingId => existingId !== id) : [...prev, id]);
+  };
+
+  const handleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredAcademicYears.map(year => String(year.id)));
+    }
+  };
+
+  const handleToggleExpand = (id: string) => {
+    setExpandedRowIds(prev =>
+      prev.includes(id) ? prev.filter(existingId => existingId !== id) : [...prev, id]
+    );
   };
 
   const handleExport = async (formatType: string) => {
@@ -406,236 +533,222 @@ export default function AcademicYearsPage() {
             loading={loading}
           />
           <SummaryCard
-            icon={<CheckCircle className="text-green-700 w-4 h-4 sm:w-5 sm:h-5" />}
+            icon={<CheckCircle className="text-blue-700 w-4 h-4 sm:w-5 sm:h-5" />}
             label="Active Years"
             value={stats.active}
-            valueClassName="text-green-900"
+            valueClassName="text-blue-900"
             sublabel="Currently active"
             loading={loading}
           />
           <SummaryCard
-            icon={<XCircle className="text-gray-700 w-4 h-4 sm:w-5 sm:h-5" />}
+            icon={<XCircle className="text-blue-700 w-4 h-4 sm:w-5 sm:h-5" />}
             label="Inactive Years"
             value={stats.inactive}
-            valueClassName="text-gray-900"
+            valueClassName="text-blue-900"
             sublabel="Archived years"
             loading={loading}
           />
           <SummaryCard
-            icon={<Calendar className="text-purple-700 w-4 h-4 sm:w-5 sm:h-5" />}
+            icon={<Calendar className="text-blue-700 w-4 h-4 sm:w-5 sm:h-5" />}
             label="Total Semesters"
             value={stats.totalSemesters}
-            valueClassName="text-purple-900"
+            valueClassName="text-blue-900"
             sublabel="All semesters"
             loading={loading}
           />
         </div>
 
-        {/* Controls */}
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                placeholder="Search academic years..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full sm:w-64"
-              />
+        {/* Quick Actions Panel */}
+        <QuickActionsPanel
+          variant="premium"
+          title="Quick Actions"
+          subtitle="Essential tools and shortcuts"
+          icon={
+            <div className="w-5 h-5 text-white">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              </svg>
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          }
+          actionCards={[
+            {
+              id: 'new-academic-year',
+              label: 'New Academic Year',
+              description: 'Create a new academic year',
+              icon: <Plus className="w-5 h-5 text-white" />,
+              onClick: () => setShowForm(true)
+            },
+            {
+              id: 'import-data',
+              label: 'Import Data',
+              description: 'Import academic years from file',
+              icon: <Upload className="w-5 h-5 text-white" />,
+              onClick: () => setShowImportDialog(true)
+            },
+            {
+              id: 'export-data',
+              label: 'Export Data',
+              description: 'Export academic years to file',
+              icon: <Download className="w-5 h-5 text-white" />,
+              onClick: () => setShowExportDialog(true)
+            },
+            {
+              id: 'refresh-data',
+              label: 'Refresh Data',
+              description: 'Reload academic years data',
+              icon: loading ? (
+                <RefreshCw className="w-5 h-5 text-white animate-spin" />
+              ) : (
+                <RefreshCw className="w-5 h-5 text-white" />
+              ),
+              onClick: fetchAcademicYears,
+              disabled: loading,
+              loading: loading
+            }
+          ]}
+          collapsible={true}
+          defaultCollapsed={false}
+          className="mb-6"
+        />
 
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setViewMode(viewMode === 'table' ? 'card' : 'table')}
-            >
-              {viewMode === 'table' ? <Calendar className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchAcademicYears}
-              disabled={loading}
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowImportDialog(true)}
-            >
-              <Upload className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowExportDialog(true)}
-            >
-              <Download className="w-4 h-4" />
-            </Button>
-            <Button onClick={() => setShowForm(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              New Academic Year
-            </Button>
-          </div>
-        </div>
+        {/* Content */}
+        <Card className="shadow-lg rounded-xl overflow-hidden p-0 w-full max-w-full">
+          <CardHeader className="p-0">
+            <div className="bg-gradient-to-r from-[#1e40af] to-[#3b82f6] py-4 sm:py-6">
+              <div className="flex items-center gap-3 px-4 sm:px-6">
+                <div className="w-8 h-8 flex items-center justify-center">
+                  <GraduationCap className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Academic Years</h3>
+                  <p className="text-blue-100 text-sm">Manage academic years and semesters</p>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
 
-        {/* Bulk Actions */}
-        {selectedIds.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-blue-800">
-                {selectedIds.length} academic year(s) selected
-              </span>
-              <div className="flex gap-2">
+          {/* Search and Filter Section */}
+          <div className="border-b border-gray-200 shadow-sm p-4 sm:p-5 lg:p-6 bg-white">
+            <div className="flex flex-col xl:flex-row gap-3 sm:gap-4 items-start xl:items-center justify-start xl:justify-end">
+              <div className="relative w-full xl:w-auto xl:min-w-[220px] xl:max-w-sm">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search academic years..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 sm:gap-3 w-full xl:w-auto">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-full sm:w-32 lg:w-36 xl:w-32 text-gray-500 rounded">
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedIds([])}
+                  onClick={() => setViewMode(viewMode === 'table' ? 'card' : 'table')}
+                  className="h-10 px-4 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded"
                 >
-                  Clear Selection
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleBulkAction('delete')}
-                >
-                  Delete Selected
+                  {viewMode === 'table' ? <Calendar className="w-4 h-4" /> : <Users className="w-4 h-4" />}
                 </Button>
               </div>
             </div>
           </div>
-        )}
 
-        {/* Content */}
-        {filteredAcademicYears.length === 0 ? (
-          <EmptyState
-            icon={<GraduationCap className="h-12 w-12 text-gray-400" />}
-            title="No Academic Years"
-            description={academicYears.length === 0 
-              ? "Create your first academic year to get started"
-              : "No academic years match your current filters"
-            }
-            action={
-              academicYears.length === 0 ? (
-                <Button onClick={() => setShowForm(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Academic Year
-                </Button>
-              ) : (
-                <Button variant="outline" onClick={() => {
-                  setSearchTerm('');
-                  setStatusFilter('all');
-                }}>
-                  Clear Filters
-                </Button>
-              )
-            }
-          />
-        ) : (
-          <div className="bg-white rounded-lg shadow-sm border">
-            {viewMode === 'table' ? (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Academic Year
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Duration
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Semesters
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredAcademicYears.map((academicYear) => (
-                      <tr key={academicYear.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                              <GraduationCap className="w-5 h-5 text-blue-600" />
-                            </div>
-                            <div>
-                              <div className="font-medium text-gray-900">{academicYear.name}</div>
-                              <div className="text-sm text-gray-500">
-                                {format(new Date(academicYear.startDate), 'MMM yyyy')} - {format(new Date(academicYear.endDate), 'MMM yyyy')}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          <div>
-                            <div className="text-sm text-gray-900">
-                              {format(new Date(academicYear.startDate), 'MMM dd, yyyy')}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              to {format(new Date(academicYear.endDate), 'MMM dd, yyyy')}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="flex items-center justify-center space-x-1">
-                            <Calendar className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm font-medium">{academicYear.semesters.length}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <Badge variant={academicYear.isActive ? 'default' : 'secondary'}>
-                            {academicYear.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <TableRowActions
-                            itemName={academicYear.name}
-                            onView={() => handleViewAcademicYear(academicYear)}
-                            onEdit={() => handleEditAcademicYear(academicYear)}
-                            onDelete={() => handleDeleteAcademicYear(academicYear)}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <CardContent className="p-6">
+            {/* Bulk Actions */}
+            {selectedIds.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-blue-800">
+                    {selectedIds.length} academic year(s) selected
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedIds([])}
+                    >
+                      Clear Selection
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBulkAction('archive')}
+                      disabled={!canArchiveSelected}
+                      className={`border-orange-300 text-orange-700 hover:bg-orange-50 ${
+                        !canArchiveSelected ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : ''
+                      }`}
+                    >
+                      Archive Selected
+                    </Button>
+                  </div>
+                </div>
               </div>
+            )}
+            {filteredAcademicYears.length === 0 ? (
+              <EmptyState
+                icon={<GraduationCap className="h-12 w-12 text-gray-400" />}
+                title="No Academic Years"
+                description={academicYears.length === 0 
+                  ? "Create your first academic year to get started"
+                  : "No academic years match your current filters"
+                }
+                action={
+                  academicYears.length === 0 ? (
+                    <Button onClick={() => setShowForm(true)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Academic Year
+                    </Button>
+                  ) : (
+                    <Button variant="outline" onClick={() => {
+                      setSearchTerm('');
+                      setStatusFilter('all');
+                    }}>
+                      Clear Filters
+                    </Button>
+                  )
+                }
+              />
+            ) : viewMode === 'table' ? (
+              <TableList
+                columns={academicYearColumns}
+                data={filteredAcademicYears}
+                loading={loading}
+                emptyMessage={null}
+                className="border-0 shadow-none"
+                getItemId={(item) => String(item.id)}
+                selectedIds={selectedIds}
+                onSelectRow={handleSelectRow}
+                onSelectAll={handleSelectAll}
+                isAllSelected={isAllSelected}
+                isIndeterminate={isIndeterminate}
+                expandedRowIds={expandedRowIds}
+                onToggleExpand={handleToggleExpand}
+              />
             ) : (
-              <div className="p-6">
+              <div className="pt-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredAcademicYears.map((academicYear) => (
                     <Card key={academicYear.id} className="hover:shadow-md transition-shadow">
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                              <GraduationCap className="w-5 h-5 text-blue-600" />
-                            </div>
-                            <div>
-                              <CardTitle className="text-lg">{academicYear.name}</CardTitle>
-                              <CardDescription>
-                                {format(new Date(academicYear.startDate), 'MMM yyyy')} - {format(new Date(academicYear.endDate), 'MMM yyyy')}
-                              </CardDescription>
-                            </div>
-                          </div>
+                      <div className="flex items-center space-x-3">
+                        <div>
+                          <CardTitle className="text-lg">{academicYear.name}</CardTitle>
+                          <CardDescription>
+                            {format(new Date(academicYear.startDate), 'MMM yyyy')} - {format(new Date(academicYear.endDate), 'MMM yyyy')}
+                          </CardDescription>
+                        </div>
+                      </div>
                           <Badge variant={academicYear.isActive ? 'default' : 'secondary'}>
                             {academicYear.isActive ? 'Active' : 'Inactive'}
                           </Badge>
@@ -680,20 +793,22 @@ export default function AcademicYearsPage() {
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Quick Actions Panel */}
-        <QuickActionsPanel />
+          </CardContent>
+        </Card>
       </div>
 
       {/* Dialogs */}
-      {showForm && (
-        <AcademicYearForm
-          onSuccess={handleFormSuccess}
-          onCancel={() => setShowForm(false)}
-        />
-      )}
+      <AcademicYearForm
+        open={showForm}
+        onOpenChange={(open) => {
+          setShowForm(open);
+          if (!open) {
+            setSelectedAcademicYear(null);
+          }
+        }}
+        onSuccess={handleFormSuccess}
+        initialData={selectedAcademicYear}
+      />
 
       {selectedAcademicYear && (
         <ViewDialog
@@ -727,9 +842,15 @@ export default function AcademicYearsPage() {
         itemName={academicYearToDelete?.name || 'academic year'}
         onDelete={confirmDelete}
         onCancel={() => setAcademicYearToDelete(null)}
-        canDelete={true}
+        canDelete={academicYearToDelete ? academicYearToDelete.semesters.length === 0 : true}
         loading={loading}
-        description="This action cannot be undone. All associated semesters and data will be permanently deleted."
+        description="Archiving hides the academic year without removing historical records."
+        confirmLabel="Archive"
+        warningMessage={
+          academicYearToDelete && academicYearToDelete.semesters.length > 0
+            ? 'This academic year has connected semesters. Remove or reassign them before archiving.'
+            : undefined
+        }
       />
 
       <ExportDialog

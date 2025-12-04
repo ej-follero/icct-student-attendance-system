@@ -21,9 +21,9 @@ interface AnalyticsFiltersProps {
   departmentStats: Record<string, any>;
   filterOptions: {
     departments: Array<{ id: string; name: string }>;
-    courses: Array<{ id: string; name: string; departmentId: string }>;
-    subjects: Array<{ id: string; name: string; courseId: string }>;
-    sections?: Array<{ id: string; name: string; courseId?: string; yearLevel?: number }>;
+    courses: Array<{ id: string; name: string; departmentId: string; code?: string; departmentCode?: string }>;
+    subjects: Array<{ id: string; name: string; courseId: string; courseCode?: string }>;
+    sections?: Array<{ id: string; name: string; courseId?: string; courseCode?: string; yearLevel?: number }>;
     yearLevels?: Array<{ id: string; name: string }>; // e.g. FIRST_YEAR
   };
   onDepartmentChange: (value: string) => void;
@@ -68,38 +68,79 @@ export function AnalyticsFilters({
       })
     : filterOptions.courses;
 
-  // Filter subjects based on selected course (supports courseId or courseCode)
-  const filteredSubjects = selectedCourse !== 'all' 
-    ? filterOptions.subjects.filter((subject: any) => {
-        const subjCourseId = subject.courseId != null ? String(subject.courseId) : undefined;
-        const subjCourseCode = subject.courseCode != null ? String(subject.courseCode) : undefined;
-        const selected = String(selectedCourse);
-        return subjCourseId === selected || subjCourseCode === selected;
-      })
-    : filterOptions.subjects;
+  // Filter subjects based on selected department and/or course (cascading filter)
+  const filteredSubjects = filterOptions.subjects.filter((subject: any) => {
+    // If department is selected, filter subjects by department (via course)
+    if (selectedDepartment !== 'all') {
+      // Find the course for this subject
+      const subjectCourse = filterOptions.courses.find((c: any) => 
+        String(c.id) === String(subject.courseId) || String(c.code) === String(subject.courseCode)
+      );
+      if (subjectCourse) {
+        const courseDeptId = subjectCourse.departmentId != null ? String(subjectCourse.departmentId) : undefined;
+        const courseDeptCode = subjectCourse.departmentCode != null ? String(subjectCourse.departmentCode) : undefined;
+        const selected = String(selectedDepartment);
+        const matchesDepartment = courseDeptId === selected || courseDeptCode === selected;
+        if (!matchesDepartment) return false;
+      }
+    }
+    
+    // If course is selected, filter by course
+    if (selectedCourse !== 'all') {
+      const subjCourseId = subject.courseId != null ? String(subject.courseId) : undefined;
+      const subjCourseCode = subject.courseCode != null ? String(subject.courseCode) : undefined;
+      const selected = String(selectedCourse);
+      const matchesCourse = subjCourseId === selected || subjCourseCode === selected;
+      if (!matchesCourse) return false;
+    }
+    
+    return true;
+  });
 
   // Filter sections based on selected course (if provided) - supports courseId or courseCode
   const allSections = filterOptions.sections || [];
-  // Map selected year level string to numeric year level used by Section.yearLevel (1-4)
-  const yearLevelMap: Record<string, number> = {
-    FIRST_YEAR: 1,
-    SECOND_YEAR: 2,
-    THIRD_YEAR: 3,
-    FOURTH_YEAR: 4
-  };
-  const selectedYearLevelNumber = yearLevelMap[String(selectedYearLevel)] || undefined;
-
-  const filteredSections = selectedCourse !== 'all'
-    ? allSections.filter((section: any) => {
-        if (!section.courseId && !section.courseCode) return true;
-        const sectionCourseId = section.courseId != null ? String(section.courseId) : undefined;
-        const sectionCourseCode = section.courseCode != null ? String(section.courseCode) : undefined;
-        const selected = String(selectedCourse);
-        const matchesCourse = sectionCourseId === selected || sectionCourseCode === selected;
-        const matchesYearLevel = selectedYearLevelNumber ? Number(section.yearLevel) === selectedYearLevelNumber : true;
-        return matchesCourse && matchesYearLevel;
-      })
-    : allSections;
+  
+  // Filter sections by department, course, and/or year level (cascading filter)
+  const filteredSections = allSections.filter((section: any) => {
+    // If department is selected, filter sections by department (via course)
+    if (selectedDepartment !== 'all') {
+      // Find the course for this section
+      const sectionCourse = filterOptions.courses.find((c: any) => 
+        String(c.id) === String(section.courseId) || String(c.code) === String(section.courseCode)
+      );
+      if (sectionCourse) {
+        const courseDeptId = sectionCourse.departmentId != null ? String(sectionCourse.departmentId) : undefined;
+        const courseDeptCode = sectionCourse.departmentCode != null ? String(sectionCourse.departmentCode) : undefined;
+        const selected = String(selectedDepartment);
+        const matchesDepartment = courseDeptId === selected || courseDeptCode === selected;
+        if (!matchesDepartment) return false;
+      }
+    }
+    
+    // If course is selected, filter by course
+    if (selectedCourse !== 'all') {
+      if (!section.courseId && !section.courseCode) return false; // Section must have course info if filtering by course
+      const sectionCourseId = section.courseId != null ? String(section.courseId) : undefined;
+      const sectionCourseCode = section.courseCode != null ? String(section.courseCode) : undefined;
+      const selected = String(selectedCourse);
+      const matchesCourse = sectionCourseId === selected || sectionCourseCode === selected;
+      if (!matchesCourse) return false;
+    }
+    
+    // If year level is selected, filter by year level (yearLevel is stored as string enum like "FIRST_YEAR")
+    if (selectedYearLevel !== 'all') {
+      // Only filter if section has a yearLevel field
+      if (section.yearLevel !== null && section.yearLevel !== undefined) {
+        // Compare string enum values directly (e.g., "FIRST_YEAR" === "FIRST_YEAR")
+        const sectionYearLevel = String(section.yearLevel);
+        const selected = String(selectedYearLevel);
+        if (sectionYearLevel !== selected) return false;
+      }
+      // If section doesn't have yearLevel, include it (don't filter it out)
+    }
+    
+    return true;
+  });
 
   // Local search states for large lists
   const [courseSearch, setCourseSearch] = useState('');
@@ -136,18 +177,26 @@ export function AnalyticsFilters({
   const isDepartmentSelected = selectedDepartment !== 'all';
   const isCourseSelected = selectedCourse !== 'all' && isDepartmentSelected;
   const isYearLevelSelected = selectedYearLevel !== 'all' && isCourseSelected;
-  const isSectionSelected = selectedSection !== 'all' && isYearLevelSelected;
+  const isSectionSelected = selectedSection !== 'all';
 
   // Debug logging to help identify the sections filter issue
   console.log('🔍 Sections Filter Debug:', {
     selectedCourse,
     selectedYearLevel,
-    selectedYearLevelNumber,
     allSectionsCount: allSections.length,
     filteredSectionsCount: filteredSections.length,
     isYearLevelSelected,
-    sectionsDisabled: !isYearLevelSelected || (filteredSections || []).length === 0,
-    sampleSections: allSections.slice(0, 3).map(s => ({
+    sectionsDisabled: (filteredSections || []).length === 0,
+    sampleSections: allSections.slice(0, 5).map(s => ({
+      id: s.id,
+      name: s.name,
+      courseId: s.courseId,
+      courseCode: s.courseCode,
+      yearLevel: s.yearLevel,
+      yearLevelType: typeof s.yearLevel,
+      matchesYearLevel: selectedYearLevel !== 'all' ? String(s.yearLevel) === String(selectedYearLevel) : 'N/A'
+    })),
+    sampleFilteredSections: filteredSections.slice(0, 5).map(s => ({
       id: s.id,
       name: s.name,
       courseId: s.courseId,
@@ -158,13 +207,16 @@ export function AnalyticsFilters({
   // Auto-open Section dropdown when it becomes enabled and there are sections
   useEffect(() => {
     const hasSections = (filteredSections || []).length > 0;
-    if (isYearLevelSelected && hasSections && selectedSection === 'all') {
-      setIsSectionOpen(true);
+    if (hasSections && selectedSection === 'all') {
+      // Only auto-open if course is selected (to avoid opening too early)
+      if (isCourseSelected) {
+        setIsSectionOpen(true);
+      }
     }
-    if (!isYearLevelSelected || !hasSections) {
+    if (!hasSections) {
       setIsSectionOpen(false);
     }
-  }, [isYearLevelSelected, filteredSections, selectedSection]);
+  }, [isCourseSelected, filteredSections, selectedSection]);
   
   return (
     <div>
@@ -191,19 +243,19 @@ export function AnalyticsFilters({
             </SelectContent>
           </Select>
 
-          {/* Course - enabled only when Department is selected */}
+          {/* Course - always available */}
           <Select 
             value={selectedCourse} 
             onValueChange={(value) => {
               onCourseChange(value);
-              // Reset subject when course changes
+              // Reset dependent filters when course changes
               if (value !== selectedCourse) {
                 onSubjectChange('all');
                 onSectionChange && onSectionChange('all');
-                onYearLevelChange && onYearLevelChange('all');
+                // Don't reset year level - it's independent
               }
             }}
-            disabled={!isDepartmentSelected || filteredCourses.length === 0}
+            disabled={filteredCourses.length === 0}
           >
             <SelectTrigger className="w-full xl:w-auto xl:min-w-[200px] xl:max-w-sm rounded text-gray-500 border-gray-300 hover:border-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
               <SelectValue placeholder="Course" />
@@ -230,7 +282,7 @@ export function AnalyticsFilters({
             </SelectContent>
           </Select>
 
-          {/* Year Level - enabled only when Course is selected */}
+          {/* Year Level - always available */}
           {onYearLevelChange && (
             <Select
               value={selectedYearLevel}
@@ -240,7 +292,6 @@ export function AnalyticsFilters({
                   onSectionChange && onSectionChange('all');
                 }
               }}
-              disabled={!isCourseSelected}
             >
               <SelectTrigger className="w-full sm:w-36 lg:w-40 xl:w-36 rounded text-gray-500 border-gray-300 hover:border-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                 <SelectValue placeholder="Year Level" />
@@ -268,7 +319,7 @@ export function AnalyticsFilters({
             </Select>
           )}
 
-          {/* Section Selector with search when >= 10 - enabled only when Year Level is selected */}
+          {/* Section Selector with search when >= 10 - enabled when sections are available */}
           {onSectionChange && (
             <Select
               value={selectedSection}
@@ -281,7 +332,7 @@ export function AnalyticsFilters({
               }}
               open={isSectionOpen}
               onOpenChange={setIsSectionOpen}
-              disabled={!isYearLevelSelected || (filteredSections || []).length === 0}
+              disabled={(filteredSections || []).length === 0}
             >
               <SelectTrigger className="w-full xl:w-auto xl:min-w-[200px] xl:max-w-sm rounded text-gray-500 border-gray-300 hover:border-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                 <SelectValue placeholder="Section" />
@@ -309,12 +360,12 @@ export function AnalyticsFilters({
             </Select>
           )}
 
-          {/* Subject - appears only after a Section is selected */}
-          {isSectionSelected && (
+          {/* Subject - always available */}
+          {onSubjectChange && (
             <Select 
               value={selectedSubject} 
               onValueChange={onSubjectChange}
-              disabled={!isSectionSelected || filteredSubjects.length === 0}
+              disabled={filteredSubjects.length === 0}
             >
               <SelectTrigger className="w-full xl:w-auto xl:min-w-[200px] xl:max-w-sm rounded text-gray-500 border-gray-300 hover:border-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                 <SelectValue placeholder="Subject" />

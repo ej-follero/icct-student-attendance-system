@@ -435,10 +435,12 @@ export default function RoomForm({ open, onOpenChange, type, data, id, onSuccess
             </div>
           </div>
         )}
-        {/* Form Content */}
-        <div className="flex-1 overflow-y-auto">
-          <ScrollArea className="h-full">
-            <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-8">
+        {/* Form Content and Footer Container */}
+        <div className="flex-1 flex flex-col min-h-0 relative">
+          {/* Scrollable Form Content */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <ScrollArea className="h-full">
+              <form id="room-form" onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-8">
               {/* Info: All fields required */}
               <div className="flex items-center gap-2 p-3 bg-blue-50/50 rounded border border-blue-100 text-blue-700 text-sm">
                 <Info className="h-4 w-4 text-blue-600" />
@@ -658,106 +660,108 @@ export default function RoomForm({ open, onOpenChange, type, data, id, onSuccess
                   </div>
                 </div>
               </div>
-              {/* Footer Buttons */}
-              <DialogFooter className="flex items-center justify-end pt-6 border-t border-gray-200 bg-gray-50/50 px-6 py-4">
-                <div className="flex gap-3">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          type="button"
-                          onClick={handleReset}
-                          disabled={isSubmitting || isSavingDraft}
-                          className="border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700 rounded"
-                        >
-                          <RotateCcw className="w-4 h-4 mr-2" />
-                          Reset
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Reset form to {data ? 'original values' : 'empty state'}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          type="button"
-                          onClick={handleSaveDraft}
-                          disabled={isSubmitting || isSavingDraft || !isDirty}
-                          className={`border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700 hover:border-green-500 rounded transition-all duration-200 ${draftSaved ? 'bg-green-100 border-green-500 text-green-700 shadow-sm' : ''}`}
-                        >
-                          {isSavingDraft ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Saving...
-                            </>
-                          ) : draftSaved ? (
-                            <>
-                              <Save className="w-4 h-4 mr-2" />
-                              Draft Saved!
-                            </>
-                          ) : (
-                            <>
-                              <Save className="w-4 h-4 mr-2" />
-                              Save Draft
-                            </>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{draftSaved ? "Draft has been saved successfully! (Ctrl+S)" : "Save current progress as draft (Ctrl+S)"}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    {draftExists && !data && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            type="button"
-                            onClick={handleClearDraft}
-                            disabled={isSubmitting || isSavingDraft}
-                            className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-500 rounded"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Clear Draft
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Remove saved draft permanently</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="submit"
-                          disabled={isSubmitting || isSavingDraft}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded"
-                        >
-                          {isSubmitting ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              {type === "update" ? "Saving..." : "Saving..."}
-                            </>
-                          ) : (
-                            <>
-                              {type === "update" ? "Update Room" : "Create Room"}
-                            </>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{type === "update" ? "Update room" : "Create new room"} (Ctrl+Enter)</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              </DialogFooter>
               {error && <div className="text-red-600 text-sm mt-2">{error}</div>}
             </form>
           </ScrollArea>
+          </div>
+          {/* Footer Buttons - Sticky */}
+          <DialogFooter className="sticky bottom-0 left-0 right-0 flex items-center justify-end gap-3 border-t border-gray-200 bg-white/95 backdrop-blur-sm px-6 py-4 flex-shrink-0 z-10 shadow-lg">
+          <div className="flex gap-3">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={handleReset}
+                    disabled={isSubmitting || isSavingDraft}
+                    className="border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700 rounded"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Reset
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Reset form to {data ? 'original values' : 'empty state'}</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={handleSaveDraft}
+                    disabled={isSubmitting || isSavingDraft || !isDirty}
+                    className={`border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700 hover:border-green-500 rounded transition-all duration-200 ${draftSaved ? 'bg-green-100 border-green-500 text-green-700 shadow-sm' : ''}`}
+                  >
+                    {isSavingDraft ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : draftSaved ? (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Draft Saved!
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Save Draft
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{draftSaved ? "Draft has been saved successfully! (Ctrl+S)" : "Save current progress as draft (Ctrl+S)"}</p>
+                </TooltipContent>
+              </Tooltip>
+              {draftExists && !data && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={handleClearDraft}
+                      disabled={isSubmitting || isSavingDraft}
+                      className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-500 rounded"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Clear Draft
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Remove saved draft permanently</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="submit"
+                    form="room-form"
+                    disabled={isSubmitting || isSavingDraft}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        {type === "update" ? "Saving..." : "Saving..."}
+                      </>
+                    ) : (
+                      <>
+                        {type === "update" ? "Update Room" : "Create Room"}
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{type === "update" ? "Update room" : "Create new room"} (Ctrl+Enter)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </DialogFooter>
         </div>
       </DialogContent>
       {/* Draft Saved Success Dialog */}

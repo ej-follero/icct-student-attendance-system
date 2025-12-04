@@ -103,8 +103,244 @@ export default function StudentAttendanceRecordsDialog({
     }
   };
 
+  const handleCopyRecords = async () => {
+    if (!student || filteredRecords.length === 0) {
+      toast.error('No records to copy');
+      return;
+    }
+
+    try {
+      // Format records as CSV
+      const headers = ['ID', 'Date', 'Time In', 'Time Out', 'Status', 'Subject', 'Room', 'Notes', 'Manual'];
+      const rows = filteredRecords.map(record => [
+        record.id,
+        record.date,
+        record.timeIn || '',
+        record.timeOut || '',
+        record.status,
+        record.subject,
+        record.room,
+        record.notes || '',
+        record.isManualEntry ? 'Yes' : 'No'
+      ]);
+
+      // Create CSV string
+      const csvContent = [
+        headers.join('\t'),
+        ...rows.map(row => row.map(cell => String(cell).replace(/\t/g, ' ')).join('\t'))
+      ].join('\n');
+
+      // Add student info header
+      const studentInfo = [
+        `Student: ${student.studentName}`,
+        `Student ID: ${student.studentIdNum}`,
+        `Department: ${student.department}`,
+        `Attendance Rate: ${student.attendanceRate}%`,
+        '',
+        csvContent
+      ].join('\n');
+
+      await navigator.clipboard.writeText(studentInfo);
+      toast.success(`Copied ${filteredRecords.length} attendance record(s) to clipboard`);
+    } catch (err) {
+      console.error('Failed to copy records:', err);
+      toast.error('Failed to copy records to clipboard');
+    }
+  };
+
   const handlePrint = () => {
-    toast.success('Print dialog opened');
+    if (!student || filteredRecords.length === 0) {
+      toast.error('No records to print');
+      return;
+    }
+
+    try {
+      // Create a print-friendly window
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        toast.error('Please allow popups to print');
+        return;
+      }
+
+      // Build HTML content
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Attendance Records - ${student.studentName}</title>
+            <style>
+              @media print {
+                @page {
+                  margin: 1cm;
+                }
+              }
+              * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+              }
+              body {
+                font-family: Arial, sans-serif;
+                padding: 20px;
+                color: #000;
+                background: #fff;
+              }
+              .header {
+                margin-bottom: 20px;
+                border-bottom: 1px solid #000;
+                padding-bottom: 10px;
+              }
+              .header h1 {
+                margin: 0;
+                color: #000;
+                font-size: 24px;
+              }
+              .student-info {
+                margin: 10px 0;
+                font-size: 14px;
+                color: #000;
+              }
+              .stats {
+                display: flex;
+                gap: 20px;
+                margin: 15px 0;
+                flex-wrap: wrap;
+              }
+              .stat-item {
+                padding: 10px;
+                background: #f0f0f0;
+                border-radius: 5px;
+                min-width: 120px;
+                border: 1px solid #000;
+              }
+              .stat-value {
+                font-size: 20px;
+                font-weight: bold;
+                margin-bottom: 5px;
+                color: #000;
+              }
+              .stat-label {
+                font-size: 12px;
+                color: #000;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+                font-size: 11px;
+                border: 1px solid #000;
+              }
+              th {
+                background-color: #fff;
+                color: #000;
+                padding: 8px;
+                text-align: left;
+                border: 1px solid #000;
+                font-weight: bold;
+              }
+              td {
+                padding: 6px;
+                border: 1px solid #000;
+                color: #000;
+              }
+              tr:nth-child(even) {
+                background-color: #fff;
+              }
+              tr:nth-child(odd) {
+                background-color: #f8f9fa;
+              }
+              .status-present { color: #000; font-weight: bold; }
+              .status-late { color: #000; font-weight: bold; }
+              .status-absent { color: #000; font-weight: bold; }
+              .status-excused { color: #000; font-weight: bold; }
+              .footer {
+                margin-top: 20px;
+                padding-top: 10px;
+                border-top: 1px solid #000;
+                font-size: 10px;
+                color: #000;
+                text-align: center;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Student Attendance Records</h1>
+              <div class="student-info">
+                <strong>Name:</strong> ${student.studentName}<br>
+                <strong>Student ID:</strong> ${student.studentIdNum}<br>
+                <strong>Department:</strong> ${student.department}
+              </div>
+              <div class="stats">
+                <div class="stat-item">
+                  <div class="stat-value">${student.attendanceRate}%</div>
+                  <div class="stat-label">Overall Attendance</div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-value">${student.attendedClasses}</div>
+                  <div class="stat-label">Present</div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-value">${student.absentClasses}</div>
+                  <div class="stat-label">Absent</div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-value">${student.lateClasses}</div>
+                  <div class="stat-label">Late</div>
+                </div>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Date</th>
+                  <th>Time In</th>
+                  <th>Time Out</th>
+                  <th>Status</th>
+                  <th>Subject</th>
+                  <th>Room</th>
+                  <th>Notes</th>
+                  <th>Manual</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredRecords.map(record => `
+                  <tr>
+                    <td>${record.id}</td>
+                    <td>${record.date}</td>
+                    <td>${record.timeIn || ''}</td>
+                    <td>${record.timeOut || ''}</td>
+                    <td class="status-${record.status.toLowerCase()}">${record.status}</td>
+                    <td>${record.subject}</td>
+                    <td>${record.room}</td>
+                    <td>${record.notes || ''}</td>
+                    <td>${record.isManualEntry ? 'Yes' : 'No'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div class="footer">
+              Generated on ${new Date().toLocaleString()} | Total Records: ${filteredRecords.length}
+            </div>
+            <script>
+              window.onload = function() {
+                window.print();
+                window.onafterprint = function() {
+                  window.close();
+                };
+              };
+            </script>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+    } catch (err) {
+      console.error('Failed to print records:', err);
+      toast.error('Failed to open print dialog');
+    }
   };
 
   const handleExport = async (format: 'csv' | 'excel' | 'pdf' = exportFormat) => {
@@ -825,8 +1061,9 @@ export default function StudentAttendanceRecordsDialog({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => copyToClipboard(student.studentName, 'Student Name')}
+                onClick={handleCopyRecords}
                 className="rounded border-blue-300 text-blue-700 hover:bg-blue-50"
+                disabled={!student || filteredRecords.length === 0}
               >
                 <Copy className="w-4 h-4 mr-2" />
                 Copy
@@ -838,6 +1075,7 @@ export default function StudentAttendanceRecordsDialog({
                 size="sm"
                 onClick={handlePrint}
                 className="rounded border-blue-300 text-blue-700 hover:bg-blue-50"
+                disabled={!student || filteredRecords.length === 0}
               >
                 <Printer className="w-4 h-4 mr-2" />
                 Print

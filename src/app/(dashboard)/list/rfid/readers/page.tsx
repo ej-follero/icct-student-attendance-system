@@ -62,6 +62,10 @@ type RFIDReader = z.infer<typeof readerSchema> & { hasRelatedEntities?: boolean 
 type SortField = 'deviceId' | 'deviceName' | 'status' | 'lastSeen';
 type SortOrder = 'asc' | 'desc';
 
+type SearchableReader = RFIDReader & {
+  searchComposite: string;
+};
+
 // Add Fuse.js types for better search
 type FuseResultMatch = {
   key: string;
@@ -158,27 +162,73 @@ export default function RFIDReadersPage() {
   const [roomFilter, setRoomFilter] = useState<string>("all");
 
   // Add Fuse.js setup with proper types - using dynamic import
-  const [fuse, setFuse] = useState<any>(null);
-  
-  useEffect(() => {
-    const initializeFuse = async () => {
-      const Fuse = (await import("fuse.js")).default;
-      setFuse(new Fuse<RFIDReader>(readers, {
-        keys: ["deviceId", "deviceName", "ipAddress"],
-        threshold: 0.4,
-        includeMatches: true,
-      }));
+  const searchTermNormalized = searchTerm.trim().toLowerCase();
+
+  const searchableReaders = useMemo<SearchableReader[]>(() => {
+    if (!Array.isArray(readers)) return [];
+    return readers.map((reader) => ({
+      ...reader,
+      searchComposite: [
+        reader.deviceId,
+        reader.deviceName,
+        reader.ipAddress,
+        reader.roomId ? `room ${reader.roomId}` : ''
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase(),
+    }));
+  }, [readers]);
+
+  const computeMatchIndices = (value: string, query: string): readonly [number, number][] | undefined => {
+    if (!query) return undefined;
+    const lowerValue = value.toLowerCase();
+    const idx = lowerValue.indexOf(query);
+    if (idx === -1) return undefined;
+    return [[idx, idx + query.length - 1]];
+  };
+
+  const buildMatches = (reader: SearchableReader, query: string): FuseResultMatch[] | undefined => {
+    if (!query) return undefined;
+    const matches: FuseResultMatch[] = [];
+    const addMatch = (value: string | number | null | undefined, key: string) => {
+      if (value === null || value === undefined) return;
+      const str = String(value);
+      const indices = computeMatchIndices(str, query);
+      if (indices) {
+        matches.push({ key, indices });
+      }
     };
-    if (readers.length > 0) {
-      initializeFuse();
-    }
-  }, [readers.length]); // Only depend on readers length, not the entire array
+    addMatch(reader.deviceId, "deviceId");
+    addMatch(reader.deviceName, "deviceName");
+    addMatch(reader.ipAddress, "ipAddress");
+    addMatch(reader.searchComposite, "searchComposite");
+    return matches.length ? matches : undefined;
+  };
 
   const fuzzyResults = useMemo(() => {
-    if (!searchTerm) return readers.map((r: RFIDReader, i: number) => ({ item: r, refIndex: i }));
-    if (!fuse) return readers.map((r: RFIDReader, i: number) => ({ item: r, refIndex: i }));
-    return fuse.search(searchTerm) as FuseResult<RFIDReader>[];
-  }, [searchTerm, fuse, readers]);
+    if (!searchTermNormalized) {
+      return searchableReaders.map((reader, index) => ({
+        item: reader,
+        refIndex: index,
+      })) as FuseResult<SearchableReader>[];
+    }
+
+    const filtered = searchableReaders.filter((reader) => {
+      return (
+        reader.searchComposite.includes(searchTermNormalized) ||
+        reader.deviceId.toLowerCase().includes(searchTermNormalized) ||
+        reader.deviceName.toLowerCase().includes(searchTermNormalized) ||
+        reader.ipAddress.toLowerCase().includes(searchTermNormalized)
+      );
+    });
+
+    return filtered.map((reader, index) => ({
+      item: reader,
+      refIndex: index,
+      matches: buildMatches(reader, searchTermNormalized),
+    })) as FuseResult<SearchableReader>[];
+  }, [searchTermNormalized, searchableReaders]);
 
   useEffect(() => {
     setIsClient(true);
@@ -320,7 +370,7 @@ export default function RFIDReadersPage() {
 
   // Filter readers based on search term and filters
   const filteredReaders = useMemo(() => {
-    let filtered = fuzzyResults.map((r: FuseResult<RFIDReader>) => r.item);
+    let filtered = fuzzyResults.map((r: FuseResult<SearchableReader>) => r.item as RFIDReader);
 
     // Apply status filter
     if (statusFilter !== "all") {
@@ -391,13 +441,15 @@ export default function RFIDReadersPage() {
       header: "Device ID", 
       accessor: "deviceId",
       render: (item) => {
-        const fuseResult = fuzzyResults.find(r => r.item.readerId === item.readerId) as FuseResult<RFIDReader> | undefined;
+        const fuseResult = fuzzyResults.find(r => r.item.readerId === item.readerId) as FuseResult<SearchableReader> | undefined;
         const deviceIdMatches = fuseResult?.matches?.find((m: { key: string }) => m.key === "deviceId")?.indices;
         return (
-          <div 
-            className="text-sm font-medium text-blue-900"
-            dangerouslySetInnerHTML={{ __html: safeHighlight(item.deviceId, deviceIdMatches) }}
-          />
+          <div className="text-center">
+            <div 
+              className="text-sm font-medium text-blue-900"
+              dangerouslySetInnerHTML={{ __html: safeHighlight(item.deviceId, deviceIdMatches) }}
+            />
+          </div>
         );
       }
     },
@@ -405,23 +457,41 @@ export default function RFIDReadersPage() {
       header: "Device Name", 
       accessor: "deviceName",
       render: (item) => {
-        const fuseResult = fuzzyResults.find(r => r.item.readerId === item.readerId) as FuseResult<RFIDReader> | undefined;
+        const fuseResult = fuzzyResults.find(r => r.item.readerId === item.readerId) as FuseResult<SearchableReader> | undefined;
         const deviceNameMatches = fuseResult?.matches?.find((m: { key: string }) => m.key === "deviceName")?.indices;
         return (
-          <div 
-            className="text-sm text-blue-900"
-            dangerouslySetInnerHTML={{ __html: safeHighlight(item.deviceName, deviceNameMatches) }}
-          />
+          <div className="text-center">
+            <div 
+              className="text-sm text-blue-900"
+              dangerouslySetInnerHTML={{ __html: safeHighlight(item.deviceName, deviceNameMatches) }}
+            />
+          </div>
         );
       }
     },
-    { header: "Status", accessor: "status", render: (item) => getStatusBadge(item.status) },
-    { header: "Assigned Room", accessor: "roomId", render: (item) => item.roomId || "N/A" },
+    { 
+      header: "Status", 
+      accessor: "status", 
+      render: (item) => (
+        <div className="flex justify-center">
+          {getStatusBadge(item.status)}
+        </div>
+      )
+    },
+    { 
+      header: "Assigned Room", 
+      accessor: "roomId", 
+      render: (item) => (
+        <div className="text-center text-sm font-medium text-blue-900">
+          {item.roomId ?? "N/A"}
+        </div>
+      )
+    },
     { 
       header: "IP Address", 
       accessor: "ipAddress",
       render: (item) => {
-        const fuseResult = fuzzyResults.find(r => r.item.readerId === item.readerId) as FuseResult<RFIDReader> | undefined;
+        const fuseResult = fuzzyResults.find(r => r.item.readerId === item.readerId) as FuseResult<SearchableReader> | undefined;
         const ipMatches = fuseResult?.matches?.find((m: { key: string }) => m.key === "ipAddress")?.indices;
         return (
           <div 
@@ -741,6 +811,32 @@ export default function RFIDReadersPage() {
     return Array.from(new Set(roomIds)).sort((a, b) => a - b);
   }, [readers]);
 
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{ id: string; label: string; onRemove: () => void }> = [];
+    if (searchTermNormalized) {
+      chips.push({
+        id: 'search',
+        label: `Search: "${searchTerm}"`,
+        onRemove: () => setSearchTerm(""),
+      });
+    }
+    if (statusFilter !== "all") {
+      chips.push({
+        id: 'status',
+        label: `Status: ${statusFilter}`,
+        onRemove: () => setStatusFilter("all"),
+      });
+    }
+    if (roomFilter !== "all") {
+      chips.push({
+        id: 'room',
+        label: `Room: ${roomFilter}`,
+        onRemove: () => setRoomFilter("all"),
+      });
+    }
+    return chips;
+  }, [searchTerm, searchTermNormalized, statusFilter, roomFilter]);
+
   // Print handler using shared PrintLayout (reference: departments page)
   const handlePrint = () => {
     const printColumns = [
@@ -1050,6 +1146,39 @@ export default function RFIDReadersPage() {
                   </Select>
                 </div>
               </div>
+              {activeFilterChips.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {activeFilterChips.map(chip => (
+                    <div
+                      key={chip.id}
+                      className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 text-sm"
+                    >
+                      <span>{chip.label}</span>
+                      <button
+                        type="button"
+                        onClick={chip.onRemove}
+                        className="rounded-full bg-blue-100 hover:bg-blue-200 text-blue-700 p-1"
+                        aria-label={`Remove ${chip.label}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {activeFilterChips.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm("");
+                        setStatusFilter("all");
+                        setRoomFilter("all");
+                      }}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Bulk Actions Bar */}

@@ -42,6 +42,7 @@ export function RFIDTagFormDialog({
 }: RFIDTagFormDialogProps) {
   const [isInternalSubmitting, setIsInternalSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   // Validate props
   if (!onSubmit || !onOpenChange) {
@@ -87,30 +88,25 @@ export function RFIDTagFormDialog({
           >
             <X className="h-4 w-4" />
           </Button>
-          <div>
-            <DialogTitle className="text-xl font-bold text-white mb-2 flex items-center gap-3">
+          <div className="flex items-start gap-3 mt-1">
+            <div className="w-12 h-12 bg-white/20 rounded flex items-center justify-center flex-shrink-0">
               {mode === 'create' ? (
-                <>
-                  <div className="w-10 h-10 bg-white/20 rounded flex items-center justify-center">
-                    <CreditCard className="w-6 h-6 text-white" />
-                  </div>
-                  Add Tag
-                </>
+                <CreditCard className="w-6 h-6 text-white" />
               ) : (
-                <>
-                  <div className="w-10 h-10 bg-white/20 rounded flex items-center justify-center">
-                    <Pencil className="w-6 h-6 text-white" />
-                  </div>
-                  Edit Tag
-                </>
+                <Pencil className="w-6 h-6 text-white" />
               )}
-            </DialogTitle>
-            <DialogDescription className="text-blue-100 text-sm">
+            </div>
+            <div>
+              <DialogTitle className="text-xl font-bold text-white mt-1">
+                {mode === 'create' ? 'Add Tag' : 'Edit Tag'}
+              </DialogTitle>
+              <DialogDescription className="text-blue-100 text-sm mb-1">
               {mode === 'create' 
                 ? 'Create a new RFID tag and assign it to a user.' 
                 : 'Update tag information and save changes.'
               }
             </DialogDescription>
+            </div>
           </div>
         </div>
 
@@ -127,6 +123,7 @@ export function RFIDTagFormDialog({
             isSubmitting={isDialogSubmitting}
             mode={mode}
             showFooter={false}
+            formRef={formRef}
           />
         </div>
 
@@ -141,14 +138,23 @@ export function RFIDTagFormDialog({
             >
               Cancel
             </Button>
-            <div className="text-sm text-gray-500 flex items-center">
-              {isDialogSubmitting && (
+            <Button
+              onClick={() => formRef.current?.requestSubmit()}
+              disabled={isDialogSubmitting}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors"
+            >
+              {isDialogSubmitting ? (
                 <>
-                  <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-                  {mode === 'create' ? 'Creating...' : 'Updating...'}
+                  <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  {mode === 'create' ? 'Creating...' : 'Saving...'}
+                </>
+              ) : (
+                <>
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  {mode === 'create' ? 'Create Tag' : 'Save Changes'}
                 </>
               )}
-            </div>
+            </Button>
           </div>
         </div>
       </DialogContent>

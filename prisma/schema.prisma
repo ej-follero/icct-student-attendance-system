@@ -8,6 +8,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+
 model Email {
   id          String            @id @default(cuid())
   subject     String
@@ -534,6 +535,7 @@ model SubjectSchedule {
   endDate         DateTime?
   maxStudents     Int               @default(30)
   notes           String?
+  deletedAt       DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   Attendance      Attendance[]      @relation("SubjectScheduleToAttendance")
@@ -546,6 +548,7 @@ model SubjectSchedule {
 
   @@index([subjectId, day, startTime])
   @@index([instructorId, day, startTime])
+  @@index([deletedAt])
   @@index([roomId, day, startTime])
   @@index([sectionId, status])
   @@index([semesterId, academicYear])

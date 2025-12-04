@@ -52,7 +52,8 @@ export async function GET(req: NextRequest) {
         { subject: { subjectName: { contains: q, mode: 'insensitive' } } },
         { section: { sectionName: { contains: q, mode: 'insensitive' } } },
       ],
-      status: 'ACTIVE' // Only show active schedules
+      status: 'ACTIVE', // Only show active schedules
+      deletedAt: null // Exclude soft-deleted schedules
     };
 
     // Filter by entity type and ID
@@ -71,35 +72,75 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const schedules = await prisma.subjectSchedule.findMany({
-      where: whereClause,
-      include: { 
-        subject: true, 
-        section: true,
-        instructor: {
-          select: {
-            firstName: true,
-            lastName: true
-          }
+    // Search for both schedules and events in parallel
+    const [schedules, events] = await Promise.all([
+      prisma.subjectSchedule.findMany({
+        where: whereClause,
+        include: { 
+          subject: true, 
+          section: true,
+          instructor: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          },
+          StudentSchedule: entityType === 'student' ? {
+            where: {
+              studentId: entityId ? parseInt(entityId) : undefined,
+              status: 'ACTIVE'
+            }
+          } : false
         },
-        StudentSchedule: entityType === 'student' ? {
-          where: {
-            studentId: entityId ? parseInt(entityId) : undefined,
-            status: 'ACTIVE'
-          }
-        } : false
-      },
-      take: limit,
-    });
+        take: Math.ceil(limit / 2), // Split limit between schedules and events
+      }),
+      prisma.event.findMany({
+        where: {
+          OR: [
+            { title: { contains: q, mode: 'insensitive' } },
+            { description: { contains: q, mode: 'insensitive' } },
+            { location: { contains: q, mode: 'insensitive' } },
+          ],
+          deletedAt: null, // Only show non-deleted events
+          status: { in: ['SCHEDULED', 'ONGOING', 'COMPLETED'] }, // Only show scheduled/active events
+        },
+        select: {
+          eventId: true,
+          title: true,
+          eventType: true,
+          eventDate: true,
+          endDate: true,
+          location: true,
+        },
+        orderBy: { eventDate: 'desc' },
+        take: Math.ceil(limit / 2), // Split limit between schedules and events
+      }),
+    ]);
 
-    console.log('Found schedules:', schedules.length);
+    console.log('Found schedules:', schedules.length, 'Found events:', events.length);
 
-    const items = schedules.map(s => ({
-      value: String(s.subjectSchedId),
+    // Map schedules
+    const scheduleItems = schedules.map(s => ({
+      value: `schedule:${s.subjectSchedId}`,
       label: `${s.subject.subjectCode} • ${s.section.sectionName} • ${s.day} ${s.startTime}-${s.endTime} • ${s.instructor?.firstName || 'Unknown'} ${s.instructor?.lastName || 'Instructor'}`,
     }));
 
-    console.log('Returning items:', items);
+    // Map events
+    const eventItems = events.map(e => {
+      const eventDate = new Date(e.eventDate);
+      const dateStr = eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const timeStr = eventDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      const locationStr = e.location ? ` • ${e.location}` : '';
+      return {
+        value: `event:${e.eventId}`,
+        label: `${e.title} • ${dateStr} ${timeStr}${locationStr} • ${e.eventType}`,
+      };
+    });
+
+    // Combine and limit total results
+    const items = [...scheduleItems, ...eventItems].slice(0, limit);
+
+    console.log('Returning items:', items.length);
 
     return NextResponse.json({ items });
   } catch (e) {

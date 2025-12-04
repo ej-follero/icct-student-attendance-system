@@ -52,6 +52,8 @@ export interface QuickActionsPanelProps {
   collapsible?: boolean;
   defaultCollapsed?: boolean;
   onCollapseChange?: (collapsed: boolean) => void;
+  // Vertical layout for sidebar
+  vertical?: boolean;
 }
 
 export function QuickActionsPanel({
@@ -70,7 +72,8 @@ export function QuickActionsPanel({
   headerActions = [],
   collapsible = false,
   defaultCollapsed = false,
-  onCollapseChange
+  onCollapseChange,
+  vertical = false
 }: QuickActionsPanelProps) {
   // Always default to expanded/open on mount, but allow prop override
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -133,7 +136,7 @@ export function QuickActionsPanel({
 
         {/* Action Cards Grid */}
         <div className={`p-6 transition-all duration-300 ease-in-out ${isCollapsed ? 'hidden' : 'block'}`}>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className={`grid gap-4 ${vertical ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
             {actionCards.map((action, index) => {
               const gradients = [
                 "from-blue-50 to-purple-50 border-blue-200",

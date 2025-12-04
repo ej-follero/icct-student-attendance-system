@@ -346,7 +346,7 @@ export default function SystemStatusPage() {
                   <Button
                     variant="outline"
                     className="border-blue-300 text-blue-700 hover:bg-blue-50 rounded-xl"
-                    onClick={() => router.push('/dashboard')}
+                    onClick={() => router.push('/dashboard/admin')}
                   >
                     Return to Dashboard
                   </Button>

@@ -25,8 +25,11 @@ export interface CloudStorageService {
 
 export class VercelStorageService implements CloudStorageService {
   async uploadFile(file: Buffer | Uint8Array, key: string, contentType: string, metadata?: Record<string, string>): Promise<UploadResult> {
-    const fileBuffer = Buffer.isBuffer(file) ? file : Buffer.from(file);
-    const blob = await put(key, fileBuffer, {
+    // Normalize to Uint8Array so it matches the expected PutBody types
+    const body: Uint8Array = Buffer.isBuffer(file) ? new Uint8Array(file) : file;
+
+    // Cast to any to satisfy @vercel/blob typings across runtimes
+    const blob = await put(key, body as any, {
       access: 'public',
       contentType,
       addRandomSuffix: false,

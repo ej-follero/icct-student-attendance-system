@@ -87,12 +87,20 @@ export const useUser = () => {
       
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 401) {
+          console.warn(`⚠️ [useUser] Authentication required (401): ${errorText}`);
+          setUser(null);
+          setProfile(null);
+          setError('Authentication required. Please log in.');
+          setIsInitialized(true);
+          setLoading(false);
+          return;
+        }
+
         console.error(`❌ [useUser] API error: ${response.status} - ${errorText}`);
         
         if (response.status === 503) {
           throw new Error('Database connection failed. Please check your database configuration.');
-        } else if (response.status === 401) {
-          throw new Error('Authentication failed. Please log in again.');
         } else {
           throw new Error(`Server error: ${response.status}`);
         }
@@ -118,6 +126,7 @@ export const useUser = () => {
         preferences: { language: 'en', notifications: { email: true, push: true } }
       });
       setIsInitialized(true);
+      setLoading(false);
     } catch (err: any) {
       console.log('⚠️ [useUser] Initial attempt failed:', err.message);
       
@@ -157,6 +166,7 @@ export const useUser = () => {
             preferences: { language: 'en', notifications: { email: true, push: true } }
           });
           setIsInitialized(true);
+          setLoading(false);
           return;
         }
         throw err; // non-retryable, fall through to catch below
@@ -206,6 +216,7 @@ export const useUser = () => {
           setProfile(null);
         }
         setIsInitialized(true);
+        setLoading(false);
       }
     } finally {
       setLoading(false);
