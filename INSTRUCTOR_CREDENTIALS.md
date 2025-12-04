@@ -1,27 +1,27 @@
 # Instructor Credentials
 
-## Active Instructor with Password Set
+## Sample Instructor (Non-Production Example Only)
 
-**✅ Ready to Login:**
+**✅ Example only (no real account):**
 
-- **Email:** `mabelle.rowe1@icct.edu.ph`
-- **Employee ID:** `EMP-6` (or `6`)
-- **Password:** `Instructor123!`
-- **Name:** Mabelle Skyler Rowe
+- **Email format:** `instructor@example.edu`
+- **Employee ID format:** `EMP-<number>` (e.g., `EMP-6`)
+- **Password:** `CHANGE_ME_INSTRUCTOR_PASSWORD` (set this securely in your own environment)
+- **Name:** Example Instructor
 - **Department:** College of Arts & Sciences (CAS)
-- **RFID Tag:** INSTRCAS001
-- **Phone:** (345) 262-2611 x95013
-- **Office:** College of Arts & Sciences Building, Room 150
+- **RFID Tag:** `INSTR-CAS-<ID>`
+- **Phone:** `(+63) 900-000-0000`
+- **Office:** Example Building, Example Room
 - **Office Hours:** 10:00 AM - 4:00 PM
 - **Specialization:** Networking
 - **Type:** FULL_TIME
 
 ## Login Instructions
 
-You can log in using either:
-1. **Email:** `mabelle.rowe1@icct.edu.ph`
-2. **Employee ID:** `EMP-6` or `6`
-3. **Password:** `Instructor123!`
+You can log in using either (in your own environment):
+1. **Email:** your configured instructor email (e.g., `instructor@example.edu`)
+2. **Employee ID:** an ID like `EMP-6` or `6`
+3. **Password:** the secure password you set (do **not** commit real passwords)
 
 ## Other Instructors
 
@@ -41,9 +41,10 @@ The database contains **50+ instructors**, but they don't have passwords set yet
    - Modify `temp/set-sample-credentials.js` to target a specific instructor
    - Or use the admin panel to reset passwords
 
-## Default Password
+## Default Password (Development Guidance Only)
 
-The default password used in the system is: **`Instructor123!`**
+Set a default instructor password **via environment variables or seed scripts**, and avoid hardcoding real passwords in the repository.  
+You may use a placeholder like **`CHANGE_ME_INSTRUCTOR_PASSWORD`** locally, but do not commit actual credentials.
 
 ## Notes
 
