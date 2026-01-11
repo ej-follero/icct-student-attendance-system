@@ -100,3 +100,5 @@ This project is for educational purposes.
 
 ## Screenshots
 <img width="1888" height="987" alt="image" src="https://github.com/user-attachments/assets/6a38840e-1000-44df-b91c-7be3024ae42c" />
+<img width="1910" height="1033" alt="image" src="https://github.com/user-attachments/assets/176a77ab-b5a2-457a-928a-d9e192d73fc6" />
+
